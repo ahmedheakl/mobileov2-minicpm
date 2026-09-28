@@ -13,6 +13,7 @@ pip install -r requirements.txt
 python infer.py --prompt "a woman holding a ceramic mug in a sunlit kitchen" --out out/gen.png
 python infer.py --image photo.jpg --prompt "make it snow" --out out/edit.png
 python infer.py --prompt "a cat" "a dog" --out out/          # --out becomes a directory
+python infer.py --size 1024 --prompt "..." --out out/big.png   # 1024x1024
 ```
 
 Nothing needs to be downloaded by hand. On first run it pulls three things from the Hugging Face
@@ -38,6 +39,36 @@ import fails with `No module named transformers.models.minicpmv4_6`.
 | `ahmedheakl/rand-mobile-grpo` | the GRPO baseline it was built from | 0.912 | 80.7 | 0.763 | 6.52 |
 
 A local directory works anywhere a repo id does.
+
+## 1024x1024
+
+Pass `--size 1024`. It works for generation and editing, and the weights
+(`upsampler_1024/head_ema.safetensors`, 426 MB) come from the same Hugging Face repo on first use.
+
+**The diffusion model is not involved.** The DiT stays at its 16x16 latent and runs exactly the same
+steps; 1024px is produced at DECODE time. The frozen DC-AE decoder emits its last hidden features
+(128 channels at 512px, the tensor that normally feeds `conv_out`), and a trained 106M head maps
+those features straight to 1024px RGB, anchored on a bicubic x2 of the ordinary 512px decode. The
+VAE is frozen too -- only the head is learned.
+
+That is deliberate: the DiT is a latency budget, not a resolution choice. Going to a 32x32 latent
+would quadruple the transformer cost; this costs almost nothing.
+
+| batch of 8, one RTX PRO 6000 | ms/image |
+|---|---|
+| 512px | 459 |
+| 1024px | 462 |
+
+**+3 ms/image, 0.7%.** Verified equivalent: rendering the same prompt and seed at both sizes and
+downscaling the 1024 result back to 512 gives a mean difference of 1.0/255 against the native 512px
+output -- the same picture, decoded better.
+
+The head shipped here is `c100`, selected on a reconstruction eval against the alternative approach
+(a SwinIR upsampler taking the latent 16x16 -> 32x32 *before* the frozen decode): FID 1.76 vs 2.077
+and OCR 47.9 vs 40. The latent-upsampler variant is not included.
+
+Note the VAE must stay bf16 -- fp16 underflows inside the DC-AE decoder and silently yields zeros.
+`hires.check_vae` asserts it.
 
 ## Defaults worth not "fixing"
 
@@ -70,6 +101,8 @@ mobileov2/modeling.py the model — frozen VLM + connector + DiT + DC-AE, and lo
 mobileov2/blocks.py   the mcptf connector (verbatim from the research repo)
 mobileov2/prompts.py  prompt templates and token-id construction (verbatim)
 mobileov2/pipeline.py conditioning and the DPM-Solver++ sampling loop
+mobileov2/hires.py    1024px decode: load the head, decode_1024()
+mobileov2/upsampler.py the c100 decoder head itself (verbatim from the research repo)
 ```
 
 Three details in `pipeline.py` are deliberate. None of them will raise an error if changed — the
@@ -103,7 +136,8 @@ difference 0, mean 0.33/255, max 18 on 0.1% of channels — i.e. the same image,
 
 ## Limitations
 
-- 512×512 only.
+- 512×512, or 1024×1024 via `--size 1024` (a better decode of the same 512px-latent image, not
+  more diffusion detail).
 - English prompts.
 - The editing model rewrites the scene rather than doing a local patch, so fine source detail is
   not preserved the way an inpainting model preserves it.

@@ -94,8 +94,14 @@ def make_noise(n, shape, seed, device):
 
 
 @torch.no_grad()
-def sample(model, ehs, nehs, mask, nmask, noise, steps, cfg):
-    """-> list of PIL images, one per row of `ehs`."""
+def sample(model, ehs, nehs, mask, nmask, noise, steps, cfg, size=512, head=None):
+    """-> list of PIL images, one per row of `ehs`.
+
+    size=1024 routes the final latent through the trained decoder head (see hires.py) instead of
+    the ordinary DC-AE decode. The DIFFUSION is identical either way -- same latent, same steps --
+    so 1024px is a decode-time choice and costs no extra DiT compute."""
+    assert size in (512, 1024), size
+    assert size == 512 or head is not None, "size=1024 needs the 1024px head (see hires.load_head)"
     inner = model.get_model()
     dit, vae = inner.dit, inner.vae
     bsz = ehs.shape[0]
@@ -119,6 +125,13 @@ def sample(model, ehs, nehs, mask, nmask, noise, steps, cfg):
             uncond, text = pred.chunk(2)
             pred = uncond + cfg * (text - uncond)
         lat = sched.step(pred, t, lat).prev_sample
+
+    if size == 1024:
+        from .hires import decode_1024
+        x = decode_1024(vae, head, lat)            # takes the DiT-space latent, scales internally
+        imgs = numpy_to_pil((x / 2 + 0.5).clamp(0, 1).cpu().permute(0, 2, 3, 1).float().numpy())
+        assert len(imgs) == bsz
+        return imgs
 
     lat = lat / vae.config.scaling_factor
     assert getattr(vae.config, "shift_factor", None) is None

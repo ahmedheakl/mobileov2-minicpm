@@ -16,6 +16,7 @@ from PIL import Image
 from transformers import AutoProcessor
 
 from mobileov2 import encode, encode_edit, load_model, make_noise, n_fuse, sample
+from mobileov2.hires import load_head
 from mobileov2.modeling import SANA_REPO, VLM_REPO
 
 
@@ -30,6 +31,8 @@ def main():
     ap.add_argument("--vlm_layers", type=int, default=1)
     ap.add_argument("--steps", type=int, default=12, help="12 is the measured optimum, not 20")
     ap.add_argument("--cfg", type=float, default=1.5, help="3.0 trades human quality for alignment scores")
+    ap.add_argument("--size", type=int, default=512, choices=[512, 1024],
+                    help="1024 decodes through the trained hi-res head; the diffusion is unchanged")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--gpu", type=int, default=0)
     args = ap.parse_args()
@@ -45,12 +48,13 @@ def main():
 
     device = torch.device("cuda", args.gpu) if torch.cuda.is_available() else torch.device("cpu")
     torch.set_grad_enabled(False)
-    print(f"[infer] {'edit' if edit else 'gen'} | {len(args.prompt)} prompt(s) | DPM-Solver++ order 2 "
-          f"steps={args.steps} cfg={args.cfg} | {args.ckpt}", flush=True)
+    print(f"[infer] {'edit' if edit else 'gen'} | {len(args.prompt)} prompt(s) | {args.size}px | "
+          f"DPM-Solver++ order 2 steps={args.steps} cfg={args.cfg} | {args.ckpt}", flush=True)
 
     t0 = time.time()
     model = load_model(args.ckpt, device, base=args.base, sana=args.sana, vlm_layers=args.vlm_layers)
     proc = AutoProcessor.from_pretrained(args.base)
+    head = load_head(args.ckpt, device) if args.size == 1024 else None
     inner = model.get_model()
     C, S = inner.dit.config.in_channels, inner.dit.config.sample_size
     print(f"[infer] loaded in {time.time() - t0:.1f}s | latent {C}x{S}x{S} | "
@@ -64,7 +68,7 @@ def main():
     else:
         cond = encode(model, proc.tokenizer, args.prompt, device)
     noise = make_noise(len(args.prompt), (C, S), args.seed, device)
-    imgs = sample(model, *cond, noise, args.steps, args.cfg)
+    imgs = sample(model, *cond, noise, args.steps, args.cfg, size=args.size, head=head)
     dt = time.time() - t0
 
     assert len(imgs) == len(paths), f"{len(imgs)} images for {len(paths)} outputs"
