@@ -4,631 +4,901 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mobile-O v2</title>
-<meta name="description" content="Building a 0.5B text-to-image and image-editing model to a phone latency budget: what moved the numbers, what the metrics got wrong, and where the wall actually is.">
+<meta name="description" content="A 0.5B-class text-to-image and image-editing model built to a phone latency budget: architecture, multi-task GRPO, a 1024px decoder head, and full benchmark results.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
 <style>
 :root{
-  --paper:#fbfaf7; --ink:#17171a; --muted:#5c5c66; --faint:#8a8a95;
-  --rule:#e4e2dc; --card:#ffffff; --accent:#b4530a; --accent-soft:#fdf1e6;
-  --good:#1c7c54; --bad:#a32c2c; --grid:#efede7;
+  --paper:#fbfaf7;--ink:#17171a;--muted:#5b5b66;--faint:#8b8b96;--rule:#e5e2db;--card:#fff;
+  --accent:#c2410c;--accent-2:#0f766e;--accent-soft:#fdf0e6;--teal-soft:#e6f4f1;
+  --frozen:#eef0f3;--frozen-ink:#4b5563;--good:#15803d;--bad:#b91c1c;--grid:#efece5;
+  --shadow:0 1px 2px rgba(20,20,30,.04),0 8px 24px rgba(20,20,30,.06);
   --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
   --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --serif:'Newsreader',Georgia,serif;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --paper:#0f0f11; --ink:#e9e8e4; --muted:#a0a0ab; --faint:#70707c;
-  --rule:#2a2a30; --card:#17171b; --accent:#f0913f; --accent-soft:#2a1d10;
-  --good:#4ec08b; --bad:#e8706b; --grid:#232329;
+  --paper:#0e0e10;--ink:#ebeae6;--muted:#a1a1ac;--faint:#6f6f7a;--rule:#27272d;--card:#16161a;
+  --accent:#f59e5b;--accent-2:#5eead4;--accent-soft:#2b1b0e;--teal-soft:#0c2926;
+  --frozen:#1d1f24;--frozen-ink:#a3a9b5;--good:#4ade80;--bad:#f87171;--grid:#202026;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
 }}
 :root[data-theme="dark"]{
-  --paper:#0f0f11; --ink:#e9e8e4; --muted:#a0a0ab; --faint:#70707c;
-  --rule:#2a2a30; --card:#17171b; --accent:#f0913f; --accent-soft:#2a1d10;
-  --good:#4ec08b; --bad:#e8706b; --grid:#232329;
+  --paper:#0e0e10;--ink:#ebeae6;--muted:#a1a1ac;--faint:#6f6f7a;--rule:#27272d;--card:#16161a;
+  --accent:#f59e5b;--accent-2:#5eead4;--accent-soft:#2b1b0e;--teal-soft:#0c2926;
+  --frozen:#1d1f24;--frozen-ink:#a3a9b5;--good:#4ade80;--bad:#f87171;--grid:#202026;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box}
-html{scroll-behavior:smooth;scroll-padding-top:70px}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
-  font-size:17px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  font-size:17px;line-height:1.72;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 .wrap{max-width:760px;margin:0 auto;padding:0 16px}
-.wide{max-width:980px;margin:0 auto;padding:0 16px}
+.wide{max-width:1080px;margin:0 auto;padding:0 16px}
+img{max-width:100%;display:block}
 
-nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--paper) 88%,transparent);
-  backdrop-filter:blur(12px);border-bottom:1px solid var(--rule)}
-nav .wide{display:flex;align-items:center;gap:16px;height:54px}
-nav .brand{font-weight:600;letter-spacing:-.01em;font-size:15px}
-nav .sp{flex:1}
-nav a.nl{color:var(--muted);text-decoration:none;font-size:14px}
-nav a.nl:hover{color:var(--accent)}
+nav.top{position:sticky;top:0;z-index:60;background:color-mix(in srgb,var(--paper) 86%,transparent);
+  backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);
+  border-bottom:1px solid var(--rule)}
+nav.top .wide{display:flex;align-items:center;gap:18px;height:56px}
+nav.top .brand{font-weight:650;letter-spacing:-.015em;font-size:15px}
+nav.top .brand i{font-style:normal;color:var(--accent)}
+nav.top a.nl{color:var(--muted);text-decoration:none;font-size:14px;border:0}
+nav.top a.nl:hover{color:var(--accent)}
+nav.top .sp{flex:1}
+@media(max-width:720px){nav.top a.nl{display:none}}
+.progress{position:absolute;left:0;bottom:-1px;height:2px;background:var(--accent);width:0;transition:width .1s}
 .tbtn{background:none;border:1px solid var(--rule);border-radius:8px;color:var(--muted);
-  cursor:pointer;font-size:14px;padding:5px 10px;font-family:var(--sans)}
+  cursor:pointer;font-size:14px;padding:5px 11px;font-family:var(--sans)}
 .tbtn:hover{border-color:var(--accent);color:var(--accent)}
 
-header.hero{padding:64px 0 28px}
-.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--accent);margin-bottom:18px}
-h1{font-family:var(--serif);font-size:clamp(36px,6.2vw,54px);line-height:1.1;
-  letter-spacing:-.02em;font-weight:500;margin:0 0 20px}
-.standfirst{font-size:20px;line-height:1.6;color:var(--muted);margin:0 0 26px}
-.byline{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13.5px;color:var(--faint);
-  border-top:1px solid var(--rule);padding-top:16px}
+header.hero{padding:70px 0 20px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}
+h1{font-family:var(--serif);font-size:clamp(38px,6.4vw,60px);line-height:1.06;letter-spacing:-.025em;font-weight:500;margin:0 0 22px}
+h1 em{font-style:italic;color:var(--accent)}
+.standfirst{font-size:20.5px;line-height:1.58;color:var(--muted);margin:0 0 28px}
+.byline{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13.5px;color:var(--faint);border-top:1px solid var(--rule);padding-top:16px}
 .byline b{color:var(--muted);font-weight:500}
+.links{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0 0}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;font-size:14px;
+  font-weight:500;text-decoration:none;border:1px solid var(--rule);color:var(--ink);background:var(--card)}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.primary:hover{background:var(--accent);border-color:var(--accent);color:#fff}
 
-h2{font-family:var(--serif);font-size:30px;font-weight:500;letter-spacing:-.015em;
-  margin:60px 0 6px;line-height:1.25}
-h2 .num{font-family:var(--mono);font-size:13px;color:var(--accent);display:block;
-  margin-bottom:8px;letter-spacing:.1em}
-h3{font-size:19px;font-weight:600;margin:36px 0 8px;letter-spacing:-.01em}
+h2{font-family:var(--serif);font-size:32px;font-weight:500;letter-spacing:-.018em;margin:74px 0 8px;line-height:1.2}
+h2 .num{font-family:var(--mono);font-size:12.5px;color:var(--accent);display:block;margin-bottom:10px;letter-spacing:.12em}
+h3{font-size:19.5px;font-weight:620;margin:40px 0 8px;letter-spacing:-.012em}
 p{margin:0 0 18px}
-a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 32%,transparent)}
 a:hover{border-bottom-color:var(--accent)}
-strong{font-weight:600}
-code{font-family:var(--mono);font-size:.87em;background:var(--accent-soft);
-  padding:1px 5px;border-radius:4px;color:var(--accent)}
+strong,b{font-weight:620}
+code{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);padding:1.5px 5px;border-radius:4px;color:var(--accent)}
+.lead{font-size:18.5px;color:var(--muted)}
 
-.tldr{background:var(--card);border:1px solid var(--rule);border-radius:14px;
-  padding:24px 26px;margin:32px 0}
-.tldr h4{margin:0 0 12px;font-family:var(--mono);font-size:12px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--accent)}
+.tldr{background:var(--card);border:1px solid var(--rule);border-radius:16px;padding:26px 28px;margin:34px 0;box-shadow:var(--shadow)}
+.tldr h4{margin:0 0 14px;font-family:var(--mono);font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent)}
 .tldr ul{margin:0;padding-left:20px}
-.tldr li{margin-bottom:9px}
+.tldr li{margin-bottom:10px}
 .tldr li:last-child{margin-bottom:0}
 
-.toc{border-left:2px solid var(--rule);padding:4px 0 4px 20px;margin:34px 0}
-.toc a{display:block;color:var(--muted);text-decoration:none;border:none;
-  padding:4px 0;font-size:15px}
+.toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 26px;margin:30px 0;padding:18px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.toc a{display:flex;gap:12px;color:var(--muted);border:0;padding:5px 0;font-size:15px}
 .toc a:hover{color:var(--accent)}
-.toc a span{font-family:var(--mono);font-size:12px;color:var(--faint);margin-right:10px}
+.toc a span{font-family:var(--mono);font-size:12px;color:var(--faint);padding-top:3px}
 
-figure{margin:34px 0}
-figcaption{font-size:14px;color:var(--muted);margin-top:12px;line-height:1.55}
+figure{margin:36px 0}
+figcaption{font-size:14px;color:var(--muted);margin-top:13px;line-height:1.58}
 figcaption b{color:var(--ink)}
 
-table{width:100%;border-collapse:collapse;font-size:14.5px;margin:6px 0}
-th{text-align:right;font-weight:600;padding:9px 10px;border-bottom:1.5px solid var(--rule);
-  font-size:12.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:16px;overflow:hidden;margin:32px 0}
+.stat{background:var(--card);padding:19px 18px}
+.stat .v{font-family:var(--mono);font-size:27px;font-weight:500;letter-spacing:-.025em;color:var(--accent);line-height:1.15}
+.stat .v small{font-size:14px;color:var(--muted)}
+.stat .k{font-size:12.8px;color:var(--muted);margin-top:5px;line-height:1.42}
+
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{text-align:right;font-weight:600;padding:10px 10px;border-bottom:1.5px solid var(--rule);font-size:11.8px;
+  letter-spacing:.04em;text-transform:uppercase;color:var(--muted);white-space:nowrap;vertical-align:bottom}
+th .t{display:block;font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint);font-size:11.5px;margin-top:2px}
 th:first-child,td:first-child{text-align:left}
-td{padding:9px 10px;border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums;
-  text-align:right;font-family:var(--mono);font-size:13.5px}
-td:first-child{font-family:var(--sans);font-size:14.5px}
-tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent)}
+td{padding:10px;border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums;text-align:right;font-family:var(--mono);font-size:13.5px;white-space:nowrap}
+td:first-child{font-family:var(--sans);font-size:14.5px;white-space:normal}
+tbody tr:hover td{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+tr.hl td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .hit{color:var(--good);font-weight:600}
-.miss{color:var(--muted)}
-.tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:20px 0}
+.dim{color:var(--faint)}
+.tbl{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:22px 0;border:1px solid var(--rule);border-radius:14px;background:var(--card)}
+.tbl table{min-width:640px}
+th[data-s]{cursor:pointer;user-select:none}
+th[data-s]:hover{color:var(--accent)}
 
-.ctrls{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 4px}
-.chip{border:1px solid var(--rule);background:var(--card);color:var(--muted);
-  border-radius:20px;padding:6px 14px;font-size:13.5px;cursor:pointer;
-  font-family:var(--sans);transition:.14s}
+.ctrls{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 6px}
+.chip{border:1px solid var(--rule);background:var(--card);color:var(--muted);border-radius:22px;padding:6px 15px;
+  font-size:13.5px;cursor:pointer;font-family:var(--sans);transition:all .15s}
 .chip:hover{border-color:var(--accent);color:var(--accent)}
-.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 
-.card{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:22px}
-.note{border-left:3px solid var(--accent);background:var(--accent-soft);
-  padding:16px 20px;border-radius:0 10px 10px 0;margin:26px 0;font-size:15.5px}
+.note{border-left:3px solid var(--accent);background:var(--accent-soft);padding:17px 21px;border-radius:0 12px 12px 0;margin:28px 0;font-size:15.6px}
+.note.teal{border-left-color:var(--accent-2);background:var(--teal-soft)}
 .note p:last-child{margin-bottom:0}
-.note .lbl{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--accent);display:block;margin-bottom:7px}
+.note .lbl{font-family:var(--mono);font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:7px}
+.note.teal .lbl{color:var(--accent-2)}
 
-pre{background:var(--card);border:1px solid var(--rule);border-radius:12px;
-  padding:16px 18px;overflow-x:auto;font-family:var(--mono);font-size:13px;
-  line-height:1.65;margin:0}
+pre{background:var(--card);border:1px solid var(--rule);border-radius:0 12px 12px 12px;padding:17px 19px;overflow-x:auto;
+  font-family:var(--mono);font-size:13px;line-height:1.68;margin:0}
 pre code{background:none;padding:0;color:var(--ink);font-size:13px}
-.tabs{display:flex;gap:4px;margin-bottom:-1px;flex-wrap:wrap}
-.tab{border:1px solid var(--rule);border-bottom:none;background:transparent;
-  border-radius:9px 9px 0 0;padding:7px 15px;font-size:13.5px;cursor:pointer;
-  color:var(--muted);font-family:var(--sans)}
-.tab[aria-selected="true"]{background:var(--card);color:var(--accent);font-weight:500}
+pre .c{color:var(--faint)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab{border:1px solid var(--rule);border-bottom:none;background:transparent;border-radius:10px 10px 0 0;padding:8px 16px;
+  font-size:13.5px;cursor:pointer;color:var(--muted);font-family:var(--sans);margin-bottom:-1px}
+.tab[aria-selected="true"]{background:var(--card);color:var(--accent);font-weight:550}
 .tabpanel[hidden]{display:none}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
-  background:var(--rule);border:1px solid var(--rule);border-radius:14px;overflow:hidden;margin:30px 0}
-.stat{background:var(--card);padding:18px 16px}
-.stat .v{font-family:var(--mono);font-size:26px;font-weight:500;letter-spacing:-.02em;color:var(--accent)}
-.stat .k{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.4}
+/* ---------- architecture figure ---------- */
+.archfig{background:var(--card);border:1px solid var(--rule);border-radius:18px;padding:22px 18px 16px;box-shadow:var(--shadow);margin:34px 0 10px}
+.archscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.archscroll svg{min-width:880px;width:100%;height:auto;display:block}
+.archfig .legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:12.5px;color:var(--muted);padding:12px 6px 2px;border-top:1px solid var(--rule);margin-top:12px}
+.archfig .legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:14px;height:14px;border-radius:4px;display:inline-block}
+.archdetail{min-height:62px;font-size:14.5px;color:var(--muted);padding:12px 8px 2px}
+.archdetail b{color:var(--ink)}
+svg .node{cursor:pointer;transition:opacity .18s}
+svg .node rect.box{transition:all .18s}
+svg.dim .node{opacity:.34}
+svg.dim .node.on{opacity:1}
+svg.dim .edge{opacity:.25}
+svg.dim .edge.on{opacity:1}
+svg .edge{transition:opacity .18s}
+svg text{font-family:var(--sans)}
 
-.arch{display:flex;flex-direction:column;gap:9px;margin:8px 0}
-.blk{display:flex;align-items:center;gap:14px;padding:13px 16px;border-radius:11px;
-  border:1px solid var(--rule);background:var(--card)}
-.blk.frozen{border-style:dashed;opacity:.86}
-.blk .ic{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:5px;
-  background:var(--accent-soft);color:var(--accent);white-space:nowrap}
-.blk .nm{font-weight:600;font-size:15px}
-.blk .dt{font-size:13px;color:var(--muted)}
-.blk .pc{margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--faint);white-space:nowrap}
-.arrow{text-align:center;color:var(--faint);font-size:15px;line-height:1}
+/* ---------- gallery ---------- */
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:18px 0}
+.gal button{padding:0;border:0;background:none;cursor:zoom-in;border-radius:10px;overflow:hidden;position:relative;aspect-ratio:1;display:block}
+.gal img{width:100%;height:100%;object-fit:cover;transition:transform .35s ease}
+.gal button:hover img{transform:scale(1.045)}
+.gal .cap{position:absolute;left:0;right:0;bottom:0;padding:22px 9px 7px;font-size:11.5px;color:#fff;text-align:left;
+  background:linear-gradient(transparent,rgba(0,0,0,.72));opacity:0;transition:opacity .2s;line-height:1.35}
+.gal button:hover .cap,.gal button:focus-visible .cap{opacity:1}
+.gal button[hidden]{display:none}
+.wide .gal{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+#facegal{grid-template-columns:repeat(4,1fr)}
+@media(max-width:640px){#facegal{grid-template-columns:repeat(2,1fr)}}
+.swipe{display:none;font-size:12.5px;color:var(--faint);text-align:right;padding:0 6px 6px;font-family:var(--mono)}
+@media(max-width:900px){.swipe{display:block}}
 
+.lb{position:fixed;inset:0;background:rgba(8,8,10,.9);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.lb.open{display:flex}
+.lb .in{max-width:min(900px,96vw);width:100%}
+.lb img{max-height:74vh;width:auto;margin:0 auto;border-radius:10px}
+.lb .txt{color:#e8e8ea;font-size:15px;margin-top:14px;line-height:1.55;text-align:center}
+.lb .txt small{display:block;color:#9a9aa5;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px}
+.lb .x{position:absolute;top:14px;right:18px;background:none;border:0;color:#fff;font-size:30px;cursor:pointer;line-height:1}
+.lb .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.1);border:0;color:#fff;
+  font-size:26px;width:46px;height:46px;border-radius:50%;cursor:pointer}
+.lb .nav:hover{background:rgba(255,255,255,.2)}
+.lb .prev{left:14px}.lb .next{right:14px}
+
+/* ---------- before/after ---------- */
+.ba{position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;user-select:none;touch-action:none;cursor:ew-resize;box-shadow:var(--shadow);background:var(--frozen)}
+.ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.ba .after{clip-path:inset(0 0 0 50%)}
+.ba .handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);pointer-events:none}
+.ba .handle::after{content:"⇆";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;
+  background:#fff;color:#222;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+.ba .tag{position:absolute;top:12px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  background:rgba(0,0,0,.55);color:#fff;padding:4px 9px;border-radius:6px;pointer-events:none}
+.ba .tag.l{left:12px}.ba .tag.r{right:12px}
+.edgrid{display:grid;grid-template-columns:1.3fr 1fr;gap:22px;align-items:start;margin:22px 0}
+@media(max-width:760px){.edgrid{grid-template-columns:1fr}}
+.edlist{display:flex;flex-direction:column;gap:6px}
+.edlist button{text-align:left;border:1px solid var(--rule);background:var(--card);border-radius:10px;padding:10px 13px;
+  cursor:pointer;font-family:var(--sans);color:var(--muted);font-size:13.8px;line-height:1.4;transition:all .15s}
+.edlist button:hover{border-color:var(--accent)}
+.edlist button[aria-pressed="true"]{border-color:var(--accent);color:var(--ink);background:var(--accent-soft)}
+.edlist button .ty{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:2px}
+
+/* ---------- compare 1024 ---------- */
+.cmp3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0 6px}
+.cmp3 .c{border-radius:12px;overflow:hidden;background:var(--card);border:1px solid var(--rule)}
+.cmp3 .c img{aspect-ratio:1;object-fit:cover;width:100%}
+.cmp3 .c .l{font-size:12.5px;padding:9px 11px;color:var(--muted);line-height:1.4}
+.cmp3 .c .l b{color:var(--ink);display:block;font-size:13px}
+@media(max-width:640px){.cmp3{grid-template-columns:1fr}}
+.zoomtoggle{margin-top:6px}
+
+footer{border-top:1px solid var(--rule);margin-top:80px;padding:36px 0 60px;font-size:14px;color:var(--faint)}
+footer a{color:var(--muted)}
+hr.sec{border:none;border-top:1px solid var(--rule);margin:56px 0}
+@media(max-width:640px){body{font-size:16px}header.hero{padding:44px 0 16px}h2{font-size:26px;margin-top:54px}.stat .v{font-size:22px}}
 svg .ax{stroke:var(--rule);stroke-width:1}
 svg .gl{stroke:var(--grid);stroke-width:1}
-svg text{fill:var(--muted);font-family:var(--mono);font-size:11px}
-svg text.lbl{fill:var(--ink)}
-.bar{transition:.2s}
-
-footer{border-top:1px solid var(--rule);margin-top:72px;padding:34px 0 56px;
-  font-size:14px;color:var(--faint)}
-footer a{color:var(--muted)}
-hr.sec{border:none;border-top:1px solid var(--rule);margin:52px 0}
-@media(max-width:640px){
-  body{font-size:16px}
-  header.hero{padding:40px 0 20px}
-  h2{font-size:25px;margin-top:46px}
-  .stat .v{font-size:22px}
-}
+svg.chart text{fill:var(--muted);font-family:var(--mono);font-size:11px}
+svg.chart text.lbl{fill:var(--ink);font-family:var(--sans);font-size:12px}
 </style>
 </head>
 <body>
-<nav><div class="wide">
-  <span class="brand">Mobile-O&nbsp;v2</span>
-  <a class="nl" href="#scoreboard">Results</a>
-  <a class="nl" href="#humans">Humans</a>
-  <a class="nl" href="#wall">The wall</a>
-  <a class="nl" href="#use">Use it</a>
+<nav class="top"><div class="wide" style="position:relative">
+  <span class="brand">Mobile-O&nbsp;<i>v2</i></span>
+  <a class="nl" href="#examples">Examples</a>
+  <a class="nl" href="#results">Results</a>
+  <a class="nl" href="#grpo">GRPO</a>
+  <a class="nl" href="#hires">1024px</a>
+  <a class="nl" href="#people">People</a>
   <span class="sp"></span>
-  <button class="tbtn" id="theme" aria-label="Toggle theme">◐</button>
+  <button class="tbtn" id="theme" aria-label="Toggle light and dark theme">◐</button>
+  <div class="progress" id="prog"></div>
 </div></nav>
 
 <div class="wrap">
 <header class="hero">
-  <div class="eyebrow">Technical report</div>
-  <h1>A 0.5B image model on a phone&nbsp;budget</h1>
-  <p class="standfirst">Mobile-O v2 generates and edits images from a frozen 1.3B vision-language
-  model and a 600M diffusion head, at a fixed 16&times;16 latent. This is a log of what actually
-  moved the numbers &mdash; including the experiments that were measuring nothing, and the point
-  where the remaining problem stopped being a training problem.</p>
+  <div class="eyebrow">Technical report · September 2026</div>
+  <h1>Mobile-O v2: generating and editing images on a <em>phone&nbsp;budget</em></h1>
+  <p class="standfirst">A frozen 1.3B vision-language model, a small learned connector, and a 600M
+  diffusion transformer at a fixed 256-token latent. This is how we took it from supervised training
+  through multi-task reinforcement learning, model merging and a 1024px decoder &mdash; with every
+  number measured, including the ones that went the wrong way.</p>
   <div class="byline">
-    <span><b>Model</b> MiniCPM-V-4.6 &rarr; mcptf &rarr; SANA-600M &rarr; DC-AE</span>
-    <span><b>Resolution</b> 512px, 1024px decode</span>
-    <span><b>Updated</b> September 2026</span>
+    <span><b>Text-to-image</b> + <b>instruction editing</b></span>
+    <span><b>Trained</b> 600.6M params</span>
+    <span><b>Output</b> 512px, or 1024px via decoder head</span>
+  </div>
+  <div class="links">
+    <a class="btn primary" href="https://github.com/ahmedheakl/mobileov2-minicpm">Code &nbsp;→</a>
+    <a class="btn" href="https://huggingface.co/ahmedheakl/rand-mobile">Weights on Hugging Face</a>
+    <a class="btn" href="#use">Run it in 3 lines</a>
   </div>
 </header>
 
 <div class="tldr">
-  <h4>The short version</h4>
+  <h4>What we contribute</h4>
   <ul>
-    <li><b>Four of six targets are met</b> by a single checkpoint at a single setting &mdash; a uniform
-      weight soup of three RL runs. GenEval 0.902, ImageReward 0.957, GEdit 6.74, and DPG 82.2.</li>
-    <li><b>Weight soups beat every member they are made of</b>, 7 times out of 7 &mdash; but only by
-      about +0.07 on a 0&ndash;1 scale. A soup cannot manufacture a target its members miss by 0.15.</li>
-    <li><b>Fewer solver steps are better.</b> Quality peaks at 8&ndash;12 steps, not 20. That is a
-      40% compute cut that <i>improves</i> human subjects, and it was found by measuring, not by tuning.</li>
-    <li><b>Two of our own human-quality rubrics were measuring the wrong thing</b> and scored real
-      photographs as worse than our generations. The fix was calibration against real photos, not a better prompt.</li>
-    <li><b>Faces are done.</b> On paired tests against the real photographs they were edited from, two
-      of our checkpoints are statistically indistinguishable from real. The remaining defect is held-object geometry.</li>
-    <li><b>The editing bottleneck is architectural.</b> The model reproduces regions it should leave
-      alone 2.64&times; worse than simply copying the source latent &mdash; because it never receives the source pixels.</li>
-    <li><b>1024px costs +3 ms/image</b>, because it is a decoder change, not a diffusion change.</li>
+    <li><b>A unified generator and editor</b> at a mobile latency budget. Against Mobile-O v1 on the same
+      scorers: <b>GenEval 0.792 → 0.912</b>, <b>DPG 73.9 → 80.7</b>, <b>FID 23.3 → 13.5</b>.</li>
+    <li><b>Multi-task GRPO with dense rewards.</b> A detector-only reward reward-hacked: GenEval rose to 0.95
+      while DPG <i>fell</i> from 72.6 to 66.0. Scoring the full caption with a VLM's log-likelihood, and
+      standardizing each reward within its own task pool before mixing, fixed it &mdash; and lets one RL run
+      train generation and editing together.</li>
+    <li><b>A 1024px decoder head</b> that reads the frozen VAE decoder's features: 4× the pixels for
+      <b>+7% latency</b>, content-neutral, FID &minus;0.5. The diffusion model never sees more tokens.</li>
+    <li><b>Model merging that beats its ingredients.</b> Averaging three RL models, each strong on a
+      different target, beats <i>all three</i> on DPG, ImageReward and GEdit at once &mdash; and meets three of six targets.</li>
+    <li><b>Faces at the real-photo ceiling.</b> On paired tests against the photographs they were edited from,
+      our faces are statistically indistinguishable from real ones.</li>
+    <li><b>A measured diagnosis of the editing gap:</b> the model reproduces regions it should leave alone
+      2.64× worse than copying the source &mdash; because the source pixels never reach it.</li>
   </ul>
 </div>
 
 <nav class="toc" aria-label="Contents">
-  <a href="#arch"><span>01</span>What the model is</a>
-  <a href="#scoreboard"><span>02</span>Six targets, one scoreboard</a>
-  <a href="#levers"><span>03</span>What actually moved the numbers</a>
-  <a href="#humans"><span>04</span>Measuring humans, badly, twice</a>
-  <a href="#disagree"><span>05</span>When two good metrics disagree</a>
-  <a href="#wall"><span>06</span>The wall is architectural</a>
-  <a href="#hires"><span>07</span>1024px for three milliseconds</a>
-  <a href="#use"><span>08</span>Using it</a>
-  <a href="#open"><span>09</span>What is still open</a>
+  <a href="#arch"><span>01</span>Architecture</a>
+  <a href="#examples"><span>02</span>Examples</a>
+  <a href="#results"><span>03</span>Results</a>
+  <a href="#grpo"><span>04</span>Multi-task GRPO</a>
+  <a href="#hires"><span>05</span>The 1024px head</a>
+  <a href="#merge"><span>06</span>Model merging</a>
+  <a href="#recipe"><span>07</span>The inference recipe</a>
+  <a href="#editing"><span>08</span>Editing</a>
+  <a href="#people"><span>09</span>People and faces</a>
+  <a href="#wall"><span>10</span>The editing wall</a>
+  <a href="#use"><span>11</span>Use it</a>
+  <a href="#open"><span>12</span>What is open</a>
 </nav>
+
+<h2 id="arch"><span class="num">01</span>Architecture</h2>
+<p>Mobile-O v2 is assembled from a strong frozen reader and a small trained writer. A frozen
+<b>MiniCPM-V-4.6</b> reads the prompt &mdash; and, when editing, the source image. A learned
+<b>connector</b> turns its last hidden layer into the diffusion model's cross-attention space. A
+<b>SANA-600M</b> diffusion transformer denoises a 32-channel latent, and a frozen <b>DC-AE</b> decodes it.
+Hover or tap any block.</p>
+</div>
+
+<div class="wide">
+<div class="archfig">
+<div class="swipe">swipe to see the full diagram →</div>
+<div class="archscroll">
+<svg id="archsvg" viewBox="0 0 1212 512" role="img" aria-label="Mobile-O v2 architecture">
+<defs>
+ <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+   <path d="M0,0 L10,5 L0,10 z" style="fill:var(--faint)"/></marker>
+ <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+   <path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent-2)"/></marker>
+ <linearGradient id="gtr" x1="0" y1="0" x2="0" y2="1">
+   <stop offset="0" style="stop-color:var(--accent-soft)"/><stop offset="1" style="stop-color:var(--card)"/></linearGradient>
+ <linearGradient id="gnew" x1="0" y1="0" x2="0" y2="1">
+   <stop offset="0" style="stop-color:var(--teal-soft)"/><stop offset="1" style="stop-color:var(--card)"/></linearGradient>
+ <pattern id="noise" width="6" height="6" patternUnits="userSpaceOnUse">
+   <rect width="6" height="6" style="fill:var(--frozen)"/>
+   <circle cx="1.5" cy="1.5" r=".8" style="fill:var(--faint)" opacity=".5"/>
+   <circle cx="4.5" cy="4" r=".6" style="fill:var(--faint)" opacity=".35"/></pattern>
+</defs>
+<g class="edge" data-e="e3"><path d="M378,234 L436,234" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+<text x="407.0" y="217.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">hidden</text>
+<text x="407.0" y="229.5" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">states</text>
+</g>
+<g class="edge" data-e="e4"><path d="M592,234 L650,234" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+<text x="621.0" y="226.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">2304-d</text>
+</g>
+<g class="edge" data-e="e5"><path d="M738.0,414 L738.0,366" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+</g>
+<g class="edge" data-e="e6"><path d="M826,128 L886,128" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+<text x="856.0" y="111.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">32×16×16</text>
+<text x="856.0" y="123.5" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">latent</text>
+</g>
+<g class="edge" data-e="e7"><path d="M1032,128 L1090,128" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+<text x="1061.0" y="119.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">512px</text>
+</g>
+<g class="edge" data-e="e8"><path d="M959.0,190 L959.0,238" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" marker-end="url(#aht)"/>
+<text x="997.0" y="210.0" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">128 ch</text>
+<text x="997.0" y="222.5" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">@ 512</text>
+</g>
+<g class="edge" data-e="e9"><path d="M1032,300 L1090,300" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" marker-end="url(#aht)"/>
+<text x="1061.0" y="291.0" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">1024px</text>
+</g>
+<g class="edge" data-e="e10"><path d="M80.0,374 L80.0,478 L436,478" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" stroke-dasharray="6 5" marker-end="url(#aht)"/>
+<text x="258.0" y="470.0" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">source-latent gate  ·  in training</text>
+</g>
+<g class="edge" data-e="e11"><path d="M592,478 L621,478 L621,255.5 L650,255.5" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" stroke-dasharray="6 5" marker-end="url(#aht)"/>
+</g>
+<g class="node" data-n="prompt" tabindex="0">
+<rect class="box" x="16" y="80" width="128" height="56" rx="12" style="fill:var(--card);stroke:var(--rule);stroke-width:1.2"/>
+<text x="80.0" y="105" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Text prompt</text>
+<text x="80.0" y="122" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">or edit instruction</text>
+
+</g>
+<g class="node" data-n="image" tabindex="0">
+<rect class="box" x="16" y="318" width="128" height="56" rx="12" style="fill:var(--card);stroke:var(--rule);stroke-width:1.2"/>
+<text x="80.0" y="343" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Source image</text>
+<text x="80.0" y="360" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">editing only</text>
+
+</g>
+<g class="node" data-n="vlm" tabindex="0">
+<rect class="box" x="194" y="40" width="184" height="384" rx="16" style="fill:var(--frozen);stroke:var(--faint);stroke-width:1.2;stroke-dasharray:5 4"/>
+<text x="286.0" y="66" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">MiniCPM-V-4.6</text>
+<text x="286.0" y="83" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">vision-language model</text>
+<rect x="208" y="96" width="156" height="150" rx="10" style="fill:var(--card);stroke:var(--rule);stroke-width:1"/>
+<text x="286.0" y="169.0" text-anchor="middle" style="fill:var(--ink);font-size:12.5px;font-weight:560">Qwen3.5 decoder</text>
+<text x="286.0" y="185.0" text-anchor="middle" style="fill:var(--muted);font-size:11px">reads the prompt</text>
+<rect x="208" y="292" width="156" height="92" rx="10" style="fill:var(--card);stroke:var(--rule);stroke-width:1"/>
+<text x="286.0" y="336.0" text-anchor="middle" style="fill:var(--ink);font-size:12.5px;font-weight:560">SigLIP + merger</text>
+<text x="286.0" y="352.0" text-anchor="middle" style="fill:var(--muted);font-size:11px">reads the image</text>
+<path d="M286.0,292 L286.0,250" style="fill:none;stroke:var(--faint);stroke-width:1.4" marker-end="url(#ah)"/>
+<text x="294.0" y="275" style="fill:var(--muted);font-family:var(--mono);font-size:9.8px">image tokens</text>
+<rect x="235.3" y="398" width="101.39999999999999" height="18" rx="9" style="fill:var(--card);stroke:var(--frozen-ink);stroke-width:1"/>
+<text x="286.0" y="410.5" text-anchor="middle" style="fill:var(--frozen-ink);font-family:var(--mono);font-size:10.8px;font-weight:500">frozen · 1.30B</text>
+</g>
+<g class="edge" data-e="e1"><path d="M144,108 L208,108" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+</g>
+<g class="edge" data-e="e2"><path d="M144,346 L208,346" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+</g>
+<g class="node" data-n="conn" tabindex="0">
+<rect class="box" x="436" y="104" width="156" height="262" rx="14" style="fill:url(#gtr);stroke:var(--accent);stroke-width:1.6"/>
+<text x="514.0" y="129" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Connector</text>
+<text x="514.0" y="146" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">ours · trained</text>
+<rect x="473.2" y="340" width="81.6" height="18" rx="9" style="fill:var(--card);stroke:var(--accent);stroke-width:1"/>
+<text x="514.0" y="352.5" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:10.8px;font-weight:500">8.8M params</text>
+<rect x="452" y="150" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="166.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">layer fusion</text><path d="M514.0,175 L514.0,183" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="183" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="199.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">1024 → 512</text><path d="M514.0,208 L514.0,216" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="216" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="232.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">2 × conv refine</text><path d="M514.0,241 L514.0,249" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="249" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="265.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">2 × attn refine</text><path d="M514.0,274 L514.0,282" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="282" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="298.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">512 → 2304</text>
+</g>
+<g class="node" data-n="dit" tabindex="0">
+<rect class="box" x="650" y="60" width="176" height="306" rx="14" style="fill:url(#gtr);stroke:var(--accent);stroke-width:1.6"/>
+<text x="738.0" y="85" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">SANA diffusion</text>
+<text x="738.0" y="102" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">ours · trained</text>
+<rect x="690.6" y="340" width="94.8" height="18" rx="9" style="fill:var(--card);stroke:var(--accent);stroke-width:1"/>
+<text x="738.0" y="352.5" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:10.8px;font-weight:500">591.7M params</text>
+<rect x="668" y="122" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:1"/><text x="738.0" y="133.2" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:9.8px">block 27</text><rect x="668" y="143" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="164" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="185" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="206" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="227" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="248" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:1"/><text x="738.0" y="259.2" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:9.8px">block 0</text><text x="738.0" y="196" text-anchor="middle" style="fill:var(--faint);font-size:13px">⋮</text><text x="738.0" y="286" text-anchor="middle" style="fill:var(--muted);font-size:11px">linear attention</text><text x="738.0" y="300" text-anchor="middle" style="fill:var(--muted);font-size:11px">+ cross-attention</text><text x="738.0" y="320" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:11px;font-weight:500">256 tokens</text>
+</g>
+<g class="node" data-n="noise" tabindex="0">
+<rect class="box" x="650" y="414" width="176" height="54" rx="12" style="fill:var(--card);stroke:var(--rule);stroke-width:1.2"/>
+<text x="738.0" y="439" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Gaussian noise</text>
+<text x="738.0" y="456" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.5px">32 × 16 × 16</text>
+</g>
+<g class="node" data-n="dec" tabindex="0">
+<rect class="box" x="886" y="76" width="146" height="114" rx="14" style="fill:var(--frozen);stroke:var(--faint);stroke-width:1.2;stroke-dasharray:5 4"/>
+<text x="959.0" y="101" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">DC-AE decoder</text>
+<text x="959.0" y="118" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">32× compression</text>
+<rect x="934.7" y="164" width="48.599999999999994" height="18" rx="9" style="fill:var(--card);stroke:var(--frozen-ink);stroke-width:1"/>
+<text x="959.0" y="176.5" text-anchor="middle" style="fill:var(--frozen-ink);font-family:var(--mono);font-size:10.8px;font-weight:500">frozen</text>
+
+</g>
+<g class="node" data-n="head" tabindex="0">
+<rect class="box" x="886" y="238" width="146" height="124" rx="14" style="fill:url(#gnew);stroke:var(--accent-2);stroke-width:1.6"/>
+<text x="959.0" y="263" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">1024px head</text>
+<text x="959.0" y="280" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">ours · decoder-side</text>
+<rect x="911.6" y="336" width="94.8" height="18" rx="9" style="fill:var(--card);stroke:var(--accent-2);stroke-width:1"/>
+<text x="959.0" y="348.5" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.8px;font-weight:500">106.5M params</text>
+
+</g>
+<g class="node" data-n="venc" tabindex="0">
+<rect class="box" x="436" y="458" width="156" height="40" rx="11" style="fill:var(--frozen);stroke:var(--faint);stroke-width:1.2;stroke-dasharray:5 4"/>
+<text x="514.0" y="483" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">VAE encode</text>
+
+</g>
+<g class="node" data-n="o512" tabindex="0">
+<rect class="box" x="1112.0" y="96" width="64" height="64" rx="9" style="fill:url(#noise);stroke:var(--rule);stroke-width:1"/>
+<path d="M1120.0,150 L1138.0,124.8 L1150.0,135.68 L1156.0,129.28 L1168.0,150 z" style="fill:var(--accent);opacity:.55"/>
+<circle cx="1160.0" cy="113.92" r="5.12" style="fill:var(--accent);opacity:.8"/>
+<text x="1144.0" y="175" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.5px">512 × 512</text>
+</g>
+<g class="node" data-n="o1024" tabindex="0">
+<rect class="box" x="1106.0" y="262" width="76" height="76" rx="9" style="fill:url(#noise);stroke:var(--rule);stroke-width:1"/>
+<path d="M1114.0,328 L1138.0,296.2 L1150.0,309.12 L1156.0,301.52 L1174.0,328 z" style="fill:var(--accent);opacity:.55"/>
+<circle cx="1163.0" cy="283.28" r="6.08" style="fill:var(--accent);opacity:.8"/>
+<text x="1144.0" y="353" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.5px">1024 × 1024</text>
+</g>
+</svg></div>
+<div class="archdetail" id="archdetail"><b>Tap a block</b> to see what it does, whether it is trained, and what it costs.</div>
+<div class="legend">
+  <span><i class="sw" style="background:var(--frozen);border:1.2px dashed var(--faint)"></i>frozen, off-the-shelf</span>
+  <span><i class="sw" style="background:var(--accent-soft);border:1.6px solid var(--accent)"></i>trained by us</span>
+  <span><i class="sw" style="background:var(--teal-soft);border:1.6px solid var(--accent-2)"></i>new decoder-side component</span>
+  <span><i class="sw" style="border-top:2px dashed var(--accent-2);height:0;width:18px;border-radius:0"></i>experimental, training now</span>
+</div>
+</div>
 </div>
 
 <div class="wrap">
-<h2 id="arch"><span class="num">01</span>What the model is</h2>
-
-<p>Mobile-O v2 is a text-to-image and instruction-editing model assembled from parts that mostly
-already existed. A frozen MiniCPM-V-4.6 reads the prompt (and, when editing, the source image). A
-small learned connector maps its hidden states into the diffusion model's cross-attention space. A
-SANA-600M diffusion transformer denoises a 32-channel latent. A frozen DC-AE decodes it.</p>
-
-<div class="arch">
-  <div class="blk frozen"><span class="ic">frozen</span><span><span class="nm">MiniCPM-V-4.6</span>
-    <span class="dt">&nbsp;&mdash; prompt and source-image understanding</span></span><span class="pc">1.30B</span></div>
-  <div class="arrow">&darr;&nbsp; last hidden layer</div>
-  <div class="blk"><span class="ic">trained</span><span><span class="nm">mcptf connector</span>
-    <span class="dt">&nbsp;&mdash; 1024 &rarr; 512 &rarr; 2304, 2 conv + 2 attention refiners</span></span><span class="pc">8.8M</span></div>
-  <div class="arrow">&darr;&nbsp; 2304-d cross-attention</div>
-  <div class="blk"><span class="ic">trained</span><span><span class="nm">SANA-600M DiT</span>
-    <span class="dt">&nbsp;&mdash; 28 blocks, 32&times;16&times;16 latent, 256 tokens</span></span><span class="pc">591.7M</span></div>
-  <div class="arrow">&darr;&nbsp; 16&times;16 latent</div>
-  <div class="blk frozen"><span class="ic">frozen</span><span><span class="nm">DC-AE f32</span>
-    <span class="dt">&nbsp;&mdash; 32&times; spatial compression, decode to 512px</span></span><span class="pc">&mdash;</span></div>
-</div>
-
-<p>Only the middle two are trained: <b>600.6M parameters</b> in 602 tensors. That is the entire
-shipped artifact &mdash; the released checkpoint is a head, not a model, and it pairs with stock
-weights for the other two.</p>
-
-<p>The number that governs every decision below is <b>256</b>. A 512px image is a 16&times;16 latent,
-which is 256 DiT tokens. This is a latency budget rather than a quality choice, and it is fixed.
-Most of the standard moves in image editing &mdash; concatenating the source image as extra tokens,
-diptych layouts, higher-resolution latents &mdash; buy quality by spending tokens, and are therefore
-unavailable. Several results below are shaped entirely by that constraint.</p>
+<p>The number that governs every design decision is <b>256</b>. A 512px image is a 16×16 latent, which
+is 256 transformer tokens. That is a latency budget, not a quality setting, and it is fixed. Most of the
+standard moves in image editing &mdash; appending the source image as extra tokens, diptych layouts,
+larger latents &mdash; buy quality by spending tokens, so they are off the table here. Several results
+below are shaped entirely by that constraint.</p>
 
 <div class="stats">
-  <div class="stat"><div class="v">600.6M</div><div class="k">trained parameters<br>(602 tensors)</div></div>
-  <div class="stat"><div class="v">256</div><div class="k">DiT tokens, fixed<br>at every resolution</div></div>
-  <div class="stat"><div class="v">459 ms</div><div class="k">per image, batch of 8<br>one RTX PRO 6000</div></div>
-  <div class="stat"><div class="v">12</div><div class="k">solver steps<br>(not 20)</div></div>
+  <div class="stat"><div class="v">600.6<small>M</small></div><div class="k">trained parameters<br>connector + diffusion</div></div>
+  <div class="stat"><div class="v">256</div><div class="k">transformer tokens,<br>fixed at every resolution</div></div>
+  <div class="stat"><div class="v">817<small>ms</small></div><div class="k">one image end-to-end,<br>batch 1, 20 steps</div></div>
+  <div class="stat"><div class="v">+7%</div><div class="k">latency for 1024px<br>via the decoder head</div></div>
 </div>
 
-<h2 id="scoreboard"><span class="num">02</span>Six targets, one scoreboard</h2>
+<p>Only the middle two components are trained. The released artifact is therefore a <i>head</i>, not a
+model: 602 tensors that pair with stock weights for the vision-language model and the autoencoder, which
+download from their own repositories on first run.</p>
+</div>
 
-<p>The project was run against six fixed targets set at the start. They are not all equally hard,
-and treating them as one number hides the only interesting thing about them &mdash; that the
-checkpoints which win one tend to lose another.</p>
+<div class="wrap">
+<h2 id="examples"><span class="num">02</span>Examples</h2>
+<p>Twenty prompts chosen to stress different things: skin and rim light, fur at telephoto, specular
+highlights, glass refraction, counting with colour binding, and five dense paragraph-length prompts
+taken directly from DPG-Bench. Click any image for its full prompt.</p>
+<div class="note teal"><span class="lbl">How these were chosen</span>
+<p>Each prompt was sampled with four seeds and the image shown is the best of the four, <b>chosen by
+eye</b>. Every seed is kept. This is a curated gallery, not a random draw &mdash; the benchmark numbers in
+section 03 are the unselected view. The editing examples in section 08 and the faces in section 09 are
+<b>not</b> selected.</p></div>
+</div>
+<div class="wide">
+<div class="ctrls" role="group" aria-label="Filter examples" id="genchips">
+  <button class="chip" data-g="all" aria-pressed="true">All 20</button>
+  <button class="chip" data-g="photo" aria-pressed="false">Photographic</button>
+  <button class="chip" data-g="scene" aria-pressed="false">Scenes</button>
+  <button class="chip" data-g="detail" aria-pressed="false">Detail &amp; objects</button>
+  <button class="chip" data-g="style" aria-pressed="false">Style &amp; text</button>
+  <button class="chip" data-g="long" aria-pressed="false">Dense DPG prompts</button>
+</div>
+<div class="gal" id="gengal"></div>
+</div>
 
-<p>Two notes on reading this. <b>ImgEdit and GEdit are scored by a local Qwen2.5-VL-72B judge</b>,
-not the GPT-4o leaderboard scale, so they are not comparable to published numbers. And the
-<i>setting</i> is part of the result: the same weights at a different guidance scale move by more
-than most of our training interventions did.</p>
+<div class="wrap">
+<figcaption style="margin-top:4px">512×512, 20 steps, cfg 1.5. One honest miss is in there: the shop sign was
+asked for <b>"THE DAILY GRIND"</b> and reads <b>"THE DALLY GRID"</b>. Legible, well-composed text with
+letter-level errors is typical of where text rendering sits at this scale.</figcaption>
 
-<div class="ctrls" role="group" aria-label="Filter">
+<h2 id="results"><span class="num">03</span>Results</h2>
+<p class="lead">Against the model it replaces, and against the targets we set at the start.</p>
+
+<h3>Mobile-O v1 → v2</h3>
+<p>Both rows measured here with identical scorers and reference sets. The released v1 was run through its
+own official inference path so it is compared as shipped.</p>
+<div class="tbl"><table>
+<thead><tr><th>Benchmark</th><th>Mobile-O v1<span class="t">0.5B, released</span></th><th>Mobile-O v2<span class="t">ours</span></th><th>change</th></tr></thead>
+<tbody>
+<tr><td>GenEval &uarr;</td><td>0.792</td><td><b>0.912</b></td><td class="hit">+0.120</td></tr>
+<tr><td>DPG-Bench &uarr;</td><td>73.92</td><td><b>80.68</b></td><td class="hit">+6.76</td></tr>
+<tr><td>FID, MJHQ-30K &darr;</td><td>23.26</td><td><b>13.51</b></td><td class="hit">&minus;9.75</td></tr>
+<tr><td>MMMU (understanding) &uarr;</td><td>34.6</td><td><b>53.8</b></td><td class="hit">+19.2</td></tr>
+</tbody></table></div>
+<figcaption>v2 at the protocol setting (cfg 1.5, 20 steps). v1's published GenEval is 0.74; through its own
+path we measure 0.792. v2's understanding is MiniCPM-V-4.6's exactly &mdash; it is frozen, so our training
+cannot degrade it. We leave ImgEdit out of this table: v1's 2.5 was judged by GPT-4o and ours by a local
+Qwen2.5-VL-72B, and the two scales are not comparable.</figcaption>
+
+<h3>The full scoreboard</h3>
+<p>Six targets were fixed at the start of the project. <b>Our merged model meets three of them at one
+setting</b> &mdash; GenEval, ImageReward and GEdit. Across all experiments, four of the six have been hit at
+least once; DPG &ge; 85 and ImgEdit &ge; 3.5 never have. Click a column to sort.</p>
+</div>
+
+<div class="wide">
+<div class="ctrls" role="group" aria-label="Filter scoreboard" id="sbchips">
   <button class="chip" data-f="all" aria-pressed="true">All rows</button>
-  <button class="chip" data-f="best" aria-pressed="false">Best per checkpoint</button>
+  <button class="chip" data-f="ours" aria-pressed="false">Our models</button>
   <button class="chip" data-f="ref" aria-pressed="false">Reference points</button>
 </div>
-<div class="tbl-scroll">
-<table id="sb">
+<div class="tbl"><table id="sb">
 <thead><tr>
-  <th data-s="0">Checkpoint &amp; setting</th>
-  <th data-s="1">GenEval<br><span style="font-weight:400;text-transform:none">&ge;0.90</span></th>
-  <th data-s="2">DPG<br><span style="font-weight:400;text-transform:none">&ge;85</span></th>
-  <th data-s="3">FID<br><span style="font-weight:400;text-transform:none">&le;8</span></th>
-  <th data-s="4">ImgRw<br><span style="font-weight:400;text-transform:none">&ge;0.90</span></th>
-  <th data-s="5">ImgEdit<br><span style="font-weight:400;text-transform:none">&ge;3.5</span></th>
-  <th data-s="6">GEdit<br><span style="font-weight:400;text-transform:none">&ge;6.7</span></th>
-  <th data-s="7">Met</th>
+ <th data-s="0">Model &amp; setting</th>
+ <th data-s="1">GenEval<span class="t">&ge; 0.90</span></th>
+ <th data-s="2">DPG<span class="t">&ge; 85</span></th>
+ <th data-s="3">FID<span class="t">&le; 8</span></th>
+ <th data-s="4">ImageReward<span class="t">&ge; 0.90</span></th>
+ <th data-s="5">CLIP<span class="t">&uarr;</span></th>
+ <th data-s="6">ImgEdit<span class="t">&ge; 3.5</span></th>
+ <th data-s="7">GEdit<span class="t">&ge; 6.7</span></th>
+ <th data-s="8">met</th>
 </tr></thead>
 <tbody>
-<tr data-g="best"><td><b>soup3-targets</b> &middot; cfg 1.5, 12 steps</td><td class="hit">0.9024</td><td>82.190</td><td>14.355</td><td class="hit">0.9571</td><td class="miss">&mdash;</td><td class="hit">6.740</td><td><b>4/6</b></td></tr>
-<tr data-g="best"><td><b>soup3-targets</b> &middot; cfg 3.0, 12 steps</td><td class="hit">0.9188</td><td>83.228</td><td>16.509</td><td class="hit">1.0831</td><td class="miss">&mdash;</td><td class="hit">6.750</td><td><b>4/6</b></td></tr>
-<tr data-g="other"><td>soup3-targets &middot; cfg 4.5 + interval</td><td class="hit">0.9063</td><td>83.883</td><td>16.977</td><td class="hit">1.1165</td><td class="miss">&mdash;</td><td class="miss">&mdash;</td><td>2/6</td></tr>
-<tr data-g="best"><td><b>v2mcptf-grpo-500</b> &middot; cfg 3.0 (baseline)</td><td class="hit">0.9284</td><td>81.727</td><td>15.398</td><td class="hit">0.9250</td><td>3.020</td><td>6.620</td><td>2/6</td></tr>
-<tr data-g="other"><td>v2mcptf-grpo-500 &middot; cfg 1.5 (protocol)</td><td class="hit">0.9116</td><td>80.679</td><td>13.508</td><td class="miss">0.7633</td><td>3.093</td><td>6.520</td><td>1/6</td></tr>
-<tr data-g="other"><td>soup-tgt-human-a0.25 &middot; cfg 3.0</td><td class="hit">0.9104</td><td>82.769</td><td>15.958</td><td class="hit">1.0676</td><td class="miss">&mdash;</td><td>6.690</td><td>2/6</td></tr>
-<tr data-g="ref"><td><i>stock SANA-600M</i> &middot; cfg 4.5</td><td class="miss">0.6554</td><td>84.038</td><td class="hit">7.264</td><td class="hit">1.0809</td><td class="miss">&mdash;</td><td class="miss">&mdash;</td><td>2/6</td></tr>
-<tr data-g="ref"><td><i>flow-matching only</i>, no RL</td><td class="miss">0.7091</td><td>72.908</td><td class="hit">5.955</td><td class="miss">0.4086</td><td>2.693</td><td>5.610</td><td>1/6</td></tr>
-<tr data-g="other"><td>qual-pickscore-250</td><td class="miss">0.8648</td><td>79.456</td><td>11.534</td><td class="hit">0.9011</td><td>3.069</td><td>6.390</td><td>1/6</td></tr>
-</tbody>
-</table>
-</div>
-<figcaption><b>The frontier, not a leaderboard.</b> The two reference rows at the bottom are the
-important ones. Stock SANA-600M &mdash; the same diffusion transformer we train &mdash; scores
-<b>FID 7.264</b> through our own scorers, and our own flow-matching-only run hit <b>5.955</b>. The
-FID target is comfortably inside the architecture's envelope; what costs us FID is the recipe, and
-specifically the conditioning path and reinforcement learning. That reading killed an earlier and
-much more expensive conclusion that FID &le;8 "needs a bigger DiT".</figcaption>
-
-<div class="note">
-  <span class="lbl">Why the columns fight each other</span>
-  <p>Raising guidance is the single strongest lever on prompt alignment: it moves GenEval, DPG and
-  ImageReward together. It also moves FID the wrong way, and &mdash; as section 04 shows &mdash; it
-  makes people look worse. There is no guidance scale at which all six columns are simultaneously
-  satisfied, and most of the second half of this project was spent establishing that this is a
-  property of the frontier rather than a tuning failure.</p>
-</div>
+<tr data-g="ours" class="hl"><td><b>Merged</b> · cfg 1.5, 12 steps</td><td class="hit">0.902</td><td>82.19</td><td>14.36</td><td class="hit">0.957</td><td>31.90</td><td class="dim">&mdash;</td><td class="hit">6.740</td><td><b>3</b></td></tr>
+<tr data-g="ours"><td><b>Merged</b> · cfg 3.0, 12 steps</td><td class="hit">0.919</td><td>83.23</td><td>16.51</td><td class="hit">1.083</td><td>32.22</td><td class="dim">&mdash;</td><td class="hit">6.750</td><td><b>3</b></td></tr>
+<tr data-g="ours"><td>Merged · cfg 4.5, interval guidance</td><td class="hit">0.906</td><td>83.88</td><td>16.98</td><td class="hit">1.117</td><td>32.27</td><td class="dim">&mdash;</td><td class="dim">&mdash;</td><td>2</td></tr>
+<tr data-g="ours"><td>After GRPO · cfg 3.0</td><td class="hit">0.928</td><td>81.73</td><td>15.40</td><td class="hit">0.925</td><td>32.17</td><td>3.020</td><td>6.620</td><td>2</td></tr>
+<tr data-g="ours"><td>After GRPO · cfg 1.5</td><td class="hit">0.912</td><td>80.68</td><td>13.51</td><td>0.763</td><td>31.78</td><td>3.093</td><td>6.520</td><td>1</td></tr>
+<tr data-g="ours"><td>After supervised training only</td><td>0.837</td><td>79.06</td><td>11.72</td><td>0.654</td><td>31.75</td><td>2.990</td><td>6.380</td><td>0</td></tr>
+<tr data-g="ref"><td><i>Best ever, any experiment</i></td><td class="hit">0.929</td><td>84.61</td><td class="hit">5.96</td><td class="hit">1.117</td><td>&mdash;</td><td>3.142</td><td class="hit">6.750</td><td class="dim">&mdash;</td></tr>
+<tr data-g="ref"><td><i>Stock SANA-600M</i> · Gemma encoder</td><td>0.655</td><td>84.04</td><td class="hit">7.26</td><td class="hit">1.081</td><td>33.57</td><td class="dim">&mdash;</td><td class="dim">&mdash;</td><td>2</td></tr>
+</tbody></table></div>
 </div>
 
 <div class="wrap">
-<h2 id="levers"><span class="num">03</span>What actually moved the numbers</h2>
+<figcaption>MJHQ-30K for FID, CLIP and ImageReward. <b>ImgEdit and GEdit use a local Qwen2.5-VL-72B judge</b>
+and are not comparable to GPT-4o-judged leaderboard numbers. "Best ever" takes each column from whichever
+experiment scored highest, so it is a ceiling, not a model &mdash; its FID of 5.96 came from a
+flow-matching-only run whose GenEval is 0.709. PRISM and CVTG appear in the 1024px table in section 05,
+which is the one protocol on which they were measured side by side.</figcaption>
 
-<p>Three things produced most of the gain, and none of them were new training data.</p>
-
-<h3>Fewer solver steps are better &mdash; by a lot, and for free</h3>
-
-<p>The protocol used 20 DPM-Solver++ steps because that is what the first eval script was written
-with. Sweeping it produced the most surprising result of the project: quality <i>peaks</i> around
-8&ndash;16 steps and degrades toward 40. Against the 20-step protocol, 8 and 16 steps are both
-significantly better on human subjects (paired, 152 matched images, t&nbsp;=&nbsp;+2.09 and
-+3.10). Twenty-eight and forty steps are not significantly different from twenty &mdash; the extra
-compute buys nothing at all.</p>
-
-<div class="ctrls" role="group" aria-label="Metric">
-  <button class="chip" data-m="human" aria-pressed="true">HumanBench overall</button>
-  <button class="chip" data-m="face" aria-pressed="false">face axis</button>
-</div>
-<figure>
-  <svg id="stepchart" viewBox="0 0 700 300" style="width:100%;height:auto" role="img"
-       aria-label="Human quality against solver step count, peaking at 8 to 16 steps"></svg>
-  <figcaption><b>Solver steps vs. human quality</b>, one checkpoint, cfg 1.5, identical noise at
-  every point. Filled markers are significantly better than the 20-step protocol in a paired test;
-  hollow markers are not. The dashed line is the 20-step protocol. Going from 20 steps to 12 is a
-  40% reduction in diffusion compute that <i>improves</i> the output.</figcaption>
-</figure>
-
-<div class="note">
-  <span class="lbl">The lesson, not the number</span>
-  <p>This had been sitting in the default arguments the entire time. It was found by sweeping a
-  parameter nobody had questioned, against a metric sensitive enough to resolve it. Every
-  fine-tuning run in this project cost hours of eight-GPU time; this cost one afternoon of
-  inference and beat most of them.</p>
-</div>
-
-<h3>Guidance is the strongest lever and it points two ways</h3>
-
-<p>Classifier-free guidance moves GenEval, DPG and ImageReward together and moves FID and human
-quality against them. The table in section 02 shows the alignment side; here is the cost side.</p>
-
-<figure>
-  <svg id="cfgchart" viewBox="0 0 700 270" style="width:100%;height:auto" role="img"
-       aria-label="Human quality falls as guidance scale rises past 2.0"></svg>
-  <figcaption><b>Human quality against guidance.</b> The same checkpoint at four guidance scales.
-  cfg 3.0 wins GenEval, DPG and ImageReward outright &mdash; and is significantly <i>worse</i> on
-  human subjects (&minus;0.147, t&nbsp;=&nbsp;&minus;2.68). We shipped cfg 1.5.</figcaption>
-</figure>
-
-<p>This is also where one of the clearer process mistakes happened. An earlier recommendation of
-cfg&nbsp;3.0 was made on the alignment targets alone, before its human quality had ever been
-measured. The measurement reversed the recommendation. A setting whose cost has not been measured
-is not a recommendation, it is a guess with a number attached.</p>
-
-<h3>Weight soups beat their own ingredients &mdash; within limits</h3>
-
-<p>Every reinforcement-learning run in the project starts from the same supervised checkpoint, which
-means they all live in one linearly-connected basin and can be averaged. Uniformly averaging three
-RL runs that each meet a <i>different</i> target produced <code>soup3-targets</code>, which beats
-<b>all three of its members</b> on DPG, ImageReward and GEdit simultaneously.</p>
-
-<div class="tbl-scroll">
-<table>
-<thead><tr><th>Checkpoint</th><th>GenEval</th><th>DPG</th><th>ImageReward</th><th>GEdit</th></tr></thead>
-<tbody>
-<tr><td>member &mdash; ta-dpg-s1.0</td><td>0.9293</td><td>81.914</td><td>0.8480</td><td>&mdash;</td></tr>
-<tr><td>member &mdash; qual-imagereward-500</td><td>0.8730</td><td>81.263</td><td>0.9165</td><td>6.450</td></tr>
-<tr><td>member &mdash; joint-grpo-refl-500</td><td>0.8800</td><td>80.900</td><td>0.8842</td><td>6.710</td></tr>
-<tr><td><b>soup of the three</b></td><td class="hit">0.9024</td><td><b>82.190</b></td><td class="hit"><b>0.9571</b></td><td class="hit"><b>6.740</b></td></tr>
-</tbody></table>
-</div>
-<figcaption>Averaging three checkpoints beats every one of them on three of four columns at once.
-Repeated across seven soups, the effect held <b>7 times out of 7</b>.</figcaption>
-
-<p>The limit matters as much as the effect. Across those seven soups the non-linear gain &mdash; the
-amount by which the soup exceeds the straight line between its endpoints &mdash; averaged about
-<b>+0.07</b> on a 0&ndash;1 scale. That is a real, repeatable free lunch, and it is far too small to
-cover a target its members miss by 0.15. Soups consolidate; they do not rescue.</p>
+<div class="note"><span class="lbl">Why no single setting wins every column</span>
+<p>Guidance is the strongest lever on alignment: raising it moves GenEval, DPG and ImageReward together.
+It moves FID the wrong way, and &mdash; section 07 &mdash; it makes people look worse. The two reference
+rows matter most: stock SANA-600M, the same diffusion transformer we train, reaches <b>FID 7.26</b> through
+our scorers, so the FID target is inside the architecture's envelope. What costs us FID is the recipe
+&mdash; the conditioning path, and reinforcement learning.</p></div>
 </div>
 
 <div class="wrap">
-<h2 id="humans"><span class="num">04</span>Measuring humans, badly, twice</h2>
+<h2 id="grpo"><span class="num">04</span>Multi-task GRPO with dense rewards</h2>
+<p>Supervised training gets the model to follow instructions; reinforcement learning is what gets it to
+follow them <i>precisely</i>. We use GRPO adapted to flow matching: at each step, sample a group of 12
+images per prompt with a stochastic sampler, score them, and push the policy toward the better-than-average
+ones. Only the connector and diffusion transformer are updated; the vision-language model and the
+autoencoder stay frozen, so each prompt is encoded once and reused across the whole group.</p>
 
-<p>Halfway through, the goal changed to human faces and bodies. There was no metric for that, so we
-built one: <b>HumanBench</b> &mdash; a vision-language judge scoring six independent axes 1&ndash;5
-on 38 prompts &times; 4 samples, with every axis independently nullable.</p>
-
-<p>The first two versions were wrong, and the way they were wrong is the useful part.</p>
-
-<h3>Rubric v1 scored real photographs as worse than our generations</h3>
-
-<p>v1 rated real photographs at <b>hands 2.946 / 51.2% defective</b>, against our own generations'
-2.798 / 60.8%. It also ranked deliberate hand close-ups &mdash; the category manual inspection found
-<i>worst</i> &mdash; as the <i>best</i> hands category, above full-body shots where hands are thirty
-pixels wide.</p>
-
-<p>The confound is obvious once stated: v1 conflated <i>"this hand is small, blurry or occluded"</i>
-with <i>"this hand is anatomically impossible"</i>. Photographs are full of the former. The axis was
-measuring hand <b>size</b>, not hand <b>correctness</b>.</p>
-
-<p>v2 gated each axis on whether the feature was actually large enough to judge, and enumerated what
-does and does not count as a defect &mdash; "a photograph is allowed to be imperfect". It still
-failed all three of its pre-registered acceptance criteria. v3 added an <code>objects</code> axis,
-for reasons in the next paragraph.</p>
-
-<div class="note">
-  <span class="lbl">A belief that survived four weeks and one measurement</span>
-  <p>The working assumption, from eyeballing contact sheets, was that <b>hands in contact</b> were
-  the dominant failure &mdash; fused fingers in handshakes, fingers around a wine-glass stem. The
-  judge disagreed. Re-reading the sheets showed why: those observations came from images generated
-  at cfg&nbsp;4.5, and at the shipping cfg&nbsp;1.5 the defect is different. It is
-  <b>held-object geometry</b> &mdash; mirror-duplicated mug handles, two-headed tools, a stem that
-  merges into the hand. The <code>objects</code> axis exists because the metric corrected its author.</p>
-</div>
-
-<h3>HumanBench is paired-only, and that is a finding</h3>
-
-<p>Absolute HumanBench scores failed calibration twice. What survives is the <i>difference</i>
-between two settings on identical prompts with identical noise &mdash; noise is seeded from
-<code>zlib.crc32</code> of the prompt id, so image <code>face_hard_06_2</code> is the same prompt
-and the same latent in every run. Two settings then differ only by the thing under test, and a
-paired test over 152 matched images resolves gaps that comparing two means cannot.</p>
-
-<h3>Faces are, in fact, finished</h3>
-
-<p>The question "how good are the faces?" has an absolute answer only against a ceiling. So we
-scored the <b>real input photographs</b> of an editing benchmark with the identical rubric, framing
-and judge &mdash; single image, no caption, never told they were generated.</p>
-
-<div class="tbl-scroll">
-<table>
-<thead><tr><th>Editing setting</th><th>face (1&ndash;5)</th><th>vs. real</th><th>t</th><th>verdict</th></tr></thead>
-<tbody>
-<tr><td><b>real photographs</b> (ceiling)</td><td><b>4.956</b></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>SDEdit s0.5</td><td>4.866</td><td>&minus;0.090</td><td>&minus;1.35</td><td class="hit">indistinguishable from real</td></tr>
-<tr><td>soup-align-human-a0.5</td><td>4.797</td><td>&minus;0.103</td><td>&minus;1.41</td><td class="hit">indistinguishable from real</td></tr>
-<tr><td>v2mcptf-grpo-500</td><td>4.765</td><td>&minus;0.191</td><td>&minus;1.98</td><td class="miss">just below real</td></tr>
-</tbody></table>
-</div>
-<figcaption>Paired against the same 70 photographs each model was asked to edit, scored identically.
-Two settings are statistically indistinguishable from real photographs on facial anatomy.</figcaption>
-
-<p>Across all 28 scored generation settings the face axis spans only <b>4.645 to 4.887</b> &mdash; a
-0.24 range on a 1&ndash;5 scale, against a real-photo ceiling of 4.956. Two sessions of work had
-implicitly been aimed at "faces". The calibration showed faces were already at the ceiling, and the
-gap that remains is elsewhere:</p>
+<h3>The first reward design reward-hacked</h3>
+<p>Our first runs used the obvious reward: GenEval's own object detector, which checks whether the right
+objects appear in the right counts, colours and positions. It worked exactly as specified &mdash; and that
+was the problem.</p>
 
 <figure>
-  <svg id="axischart" viewBox="0 0 700 250" style="width:100%;height:auto" role="img"
-       aria-label="Gap to real photographs by axis: realism and hands far exceed face"></svg>
-  <figcaption><b>Where the human-quality gap actually lives.</b> Distance from the real-photograph
-  ceiling on the same 70 images. The face gap is 0.16&ndash;0.19; the realism gap is up to 0.80, and
-  the bad-hand rate is 11&ndash;17% against <b>0.0%</b> for real photographs. Chasing the face axis
-  further is chasing a saturated measurement.</figcaption>
+  <svg id="hackchart" class="chart" viewBox="0 0 700 290" style="width:100%;height:auto" role="img"
+       aria-label="Under a detector-only reward, GenEval rises while DPG falls"></svg>
+  <figcaption><b>A detector-only reward, over 1,500 RL steps.</b> GenEval climbs from 0.740 to 0.950 while
+  DPG-Bench <i>falls</i> from 72.6 to 66.0. The detector checks short, structured prompts; DPG checks
+  paragraph-length ones. The policy learned to satisfy the detector at the expense of everything the
+  detector could not see.</figcaption>
 </figure>
+
+<p>The detector can only score short, structured prompts &mdash; "three red apples" &mdash; because it
+needs metadata to know what to look for. It is structurally blind to a paragraph describing lighting,
+texture and spatial layout, which is what DPG-Bench and PRISM measure. So we redesigned the reward.</p>
+
+<h3>What we changed</h3>
+<div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
+  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">Dense, not binary</div>
+    <div class="k">The GenEval detector returns a continuous score from mask and CLIP confidences instead of pass/fail, so every sample in the group carries gradient.</div></div>
+  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">Read it back</div>
+    <div class="k">A frozen Qwen3-VL-8B scores the <b>mean log-likelihood of the full prompt given the image</b>. It needs no metadata, so it scores paragraph prompts directly.</div></div>
+  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">Standardize per pool</div>
+    <div class="k">Rewards live on different scales &mdash; [0,1] versus an unbounded log-likelihood. Each is standardized <b>within its own task pool across all GPUs</b> before mixing, never summed raw.</div></div>
+  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">One run, two tasks</div>
+    <div class="k">Generation and editing prompts share a single RL run with task balancing, plus an OCR edit-distance reward for text and a judge-based reward for edits.</div></div>
+</div>
+
+<h3>What RL bought, and what it cost</h3>
+<p>The same model before and after 500 steps of the revised GRPO, at the same sampler setting:</p>
+<div class="tbl"><table>
+<thead><tr><th>Metric</th><th>after SFT</th><th>after GRPO</th><th>change</th></tr></thead>
+<tbody>
+<tr><td>GenEval &uarr;</td><td>0.837</td><td>0.912</td><td class="hit">+0.075</td></tr>
+<tr><td>DPG-Bench &uarr;</td><td>79.06</td><td>80.68</td><td class="hit">+1.62</td></tr>
+<tr><td>ImageReward &uarr;</td><td>0.654</td><td>0.763</td><td class="hit">+0.109</td></tr>
+<tr><td>ImgEdit &uarr;</td><td>2.99</td><td>3.09</td><td class="hit">+0.10</td></tr>
+<tr><td>GEdit &uarr;</td><td>6.38</td><td>6.52</td><td class="hit">+0.14</td></tr>
+<tr><td>FID &darr;</td><td>11.72</td><td>13.51</td><td style="color:var(--bad);font-weight:600">+1.79</td></tr>
+</tbody></table></div>
+<figcaption>cfg 1.5, 20 steps. <b>DPG now rises under RL instead of falling</b> (+1.6 here, against &minus;6.7 under
+the detector-only reward), alongside GenEval and both editing benchmarks. The revised run changed several
+things at once, so we credit the reward design as a whole rather than any single component. The cost is
+FID: RL consistently gives back one to two points of it, which is why section 06 exists.</figcaption>
+
+<div class="note"><span class="lbl">Two rules the RL work taught us</span>
+<p><b>The online reward curve is not the benchmark.</b> Twice, a run whose reward was climbing produced a
+checkpoint that was worse on held-out evaluation. Only checkpoint evals settle a claim. And <b>RL goes
+after supervised training, never before it</b>: fine-tuning an RL checkpoint with SFT regressed all three
+times we tried it.</p></div>
 </div>
 
 <div class="wrap">
-<h2 id="disagree"><span class="num">05</span>When two good metrics disagree</h2>
+<h2 id="hires"><span class="num">05</span>The 1024px decoder head</h2>
+<p>At 256 tokens, generating at a 32×32 latent would roughly quadruple the transformer's cost &mdash;
+the one thing the budget exists to prevent. So we produce 1024px <b>after</b> diffusion instead, and
+compared two ways of doing it.</p>
 
-<p>The obvious next step was a specialist metric. <a href="https://arxiv.org/html/2406.17100v2">FaceScore</a>
-is a reward model fine-tuned on pairs of high-quality versus synthetically degraded faces,
-purpose-built for exactly this. We ran the official implementation and weights over 5,000 FFHQ
-caption prompts, with identical noise per prompt across checkpoints. It reproduces the paper's own
-published example to four decimals, so the installation is right.</p>
-
-<div class="tbl-scroll">
-<table>
-<thead><tr><th>Checkpoint</th><th>FaceScore &uarr;</th><th>paired vs. baseline</th><th>face-region FID &darr;</th></tr></thead>
+<div class="tbl"><table>
+<thead><tr><th>Approach</th><th>where it acts</th><th>params</th><th>content-neutral?</th></tr></thead>
 <tbody>
-<tr><td>soup-imgrw-vqa-a0.5</td><td><b>5.823</b></td><td class="hit">+0.255 &nbsp;t=+42.0</td><td>97.72</td></tr>
-<tr><td>soup-align-human-a0.7</td><td>5.794</td><td class="hit">+0.222 &nbsp;t=+40.2</td><td>97.81</td></tr>
-<tr><td>soup-align-human-a0.5</td><td>5.740</td><td class="hit">+0.170 &nbsp;t=+34.9</td><td>96.35</td></tr>
-<tr><td>v2mcptf-grpo-500 (baseline)</td><td>5.568</td><td>&mdash;</td><td><b>92.13</b></td></tr>
-<tr><td><b>real FFHQ photographs</b></td><td class="miss">4.965</td><td class="miss">&minus;0.603 &nbsp;t=&minus;46.6</td><td><i>13.06 floor</i></td></tr>
-</tbody></table>
-</div>
+<tr><td><b>Latent upsampler</b></td><td style="font-family:var(--sans);font-size:14px">SwinIR-style, 16×16 → 32×32 latent, <i>before</i> the frozen decoder</td><td>97.5M</td><td style="color:var(--bad)">no</td></tr>
+<tr class="hl"><td><b>Decoder head</b> &middot; shipped</td><td style="font-family:var(--sans);font-size:14px">reads the frozen decoder's 128-ch features at 512px, maps them to 1024px RGB</td><td>106.5M</td><td class="hit">yes</td></tr>
+</tbody></table></div>
 
-<p>Two things to notice. First, all three soups beat the baseline by enormous margins. Second, and
-more interesting: <b>every one of our checkpoints outscores real photographs</b>, by a wide and
-highly significant margin.</p>
+<p>The decoder head taps the tensor that normally feeds the decoder's final convolution &mdash; its
+richest spatial representation &mdash; and learns a residual on top of a bicubic ×2 of the ordinary
+512px image. Starting from the bicubic anchor means it begins as a no-op and only learns to add detail.
+The autoencoder and diffusion transformer are both untouched.</p>
 
 <figure>
-  <svg id="disagreechart" viewBox="0 0 700 320" style="width:100%;height:auto" role="img"
-       aria-label="FaceScore and face-region FID rank the same four checkpoints in opposite orders"></svg>
-  <figcaption><b>The two metrics rank the same four checkpoints in opposite orders.</b> FaceScore
-  (left, higher is better) prefers the soups. Distributional distance to real FFHQ faces (right,
-  lower is better) prefers the baseline, and ranks the soups <i>further</i> from real in the same
-  order as their FaceScore gains.</figcaption>
+  <div class="ctrls" role="group" aria-label="Zoom" style="margin-top:0">
+    <button class="chip" data-z="full" aria-pressed="true">Full frame</button>
+    <button class="chip" data-z="zoom" aria-pressed="false">Centre crop, 2× nearest</button>
+  </div>
+  <div class="cmp3">
+    <div class="c"><img data-full="assets/fox/bicubic.jpg" data-zoom="assets/fox/bicubic_zoom.jpg" src="assets/fox/bicubic.jpg" alt="Bicubic 2x upscale of the 512px decode" loading="lazy"><div class="l"><b>Bicubic ×2</b>the 512px decode, resized</div></div>
+    <div class="c"><img data-full="assets/fox/latent.jpg" data-zoom="assets/fox/latent_zoom.jpg" src="assets/fox/latent.jpg" alt="Latent upsampler output" loading="lazy"><div class="l"><b>Latent upsampler</b>crispest fur, but shifts content</div></div>
+    <div class="c"><img data-full="assets/fox/head.jpg" data-zoom="assets/fox/head_zoom.jpg" src="assets/fox/head.jpg" alt="Decoder head output" loading="lazy"><div class="l"><b>Decoder head</b>sharper, same content</div></div>
+  </div>
+  <figcaption><b>The same diffusion latent, decoded three ways.</b> Switch to the centre crop to see the
+  difference: the latent upsampler draws the crispest whiskers, and the decoder head sits closer to the
+  bicubic anchor with faint artifacts on the finest strands. Its advantage is not visible here &mdash; it is
+  in the table below.</figcaption>
 </figure>
 
-<p>This is not a broken metric; it is a metric measuring what it was trained to measure. FaceScore
-learned to separate clean faces from degraded ones, so it rewards the smooth, well-lit, idealized
-look that diffusion models drift toward under quality-reward RL. Real Flickr photographs have grain,
-motion blur, awkward lighting and unflattering angles, and score lower for it.</p>
+<figure>
+  <svg id="latchart" class="chart" viewBox="0 0 700 250" style="width:100%;height:auto" role="img"
+       aria-label="Latency breakdown: diffusion dominates, the 1024 head adds 58 ms"></svg>
+  <figcaption><b>Where the time goes</b>, one image, batch 1, 20 steps, median of 30 runs after 5 warm-up, one
+  RTX PRO 6000. The diffusion transformer is 73% of the 512px pipeline. The decoder head replaces the
+  28.5 ms decode with 86.2 ms, taking the total from 817 to 874 ms: <b>+7.1% for four times the pixels</b>.</figcaption>
+</figure>
 
-<p>The quality-reward soups push <i>further</i> into that idealized region &mdash; which FaceScore
-rewards and which distributional distance to real faces penalizes, in the same order. So the honest
-statement is narrow: the soups make faces cleaner and more attractive; the baseline produces faces
-closer to the distribution of real photographs. Both are true, and which one you want is a product
-decision rather than a measurement.</p>
-
-<div class="note">
-  <span class="lbl">Practical rule</span>
-  <p>A specialist metric earns the right to rank your checkpoints. It does not automatically earn
-  the right to tell you which direction is <i>better</i>. Score the real data through the same
-  pipeline; if real data does not win, you have learned something about the metric, not about
-  the model.</p>
+<div class="tbl"><table>
+<thead><tr><th>Decode</th><th>GenEval</th><th>DPG</th><th>PRISM</th><th>CVTG</th><th>FID &darr;</th><th>CLIP</th><th>ImageReward</th><th>ImgEdit</th><th>GEdit</th><th>ms</th></tr></thead>
+<tbody>
+<tr><td>512px</td><td>0.913</td><td>80.17</td><td class="dim">&mdash;</td><td class="dim">&mdash;</td><td>14.70</td><td>31.76</td><td>0.738</td><td>3.11</td><td>6.55</td><td>817</td></tr>
+<tr><td>1024 · latent upsampler</td><td>0.900</td><td>79.59</td><td>5.21</td><td>0.0449</td><td class="hit">14.07</td><td>31.75</td><td>0.698</td><td>3.02</td><td>6.49</td><td>893</td></tr>
+<tr class="hl"><td><b>1024 · decoder head</b></td><td>0.911</td><td>80.31</td><td><b>5.43</b></td><td>0.0456</td><td>14.22</td><td>31.79</td><td>0.734</td><td>3.11</td><td>6.52</td><td>874</td></tr>
+</tbody></table></div>
+<figcaption>All nine benchmarks on one model, one protocol, three decoders. <b>The decoder head is
+content-neutral</b>: GenEval, DPG and ImgEdit are unchanged, and ImageReward moves by 0.004. <b>The latent
+upsampler is not</b>: because it rewrites the latent, it shifts the picture &mdash; GenEval &minus;0.013, DPG
+&minus;0.6, ImgEdit &minus;0.09, ImageReward &minus;0.04. It wins FID by 0.15, and the VLM-judged PRISM
+prefers the head, 5.43 to 5.21. We ship the head.</figcaption>
 </div>
 
-<h2 id="wall"><span class="num">06</span>The wall is architectural</h2>
+<div class="wrap">
+<h2 id="merge"><span class="num">06</span>Model merging</h2>
+<p>Every RL run in the project starts from the same supervised model, so they all sit in one
+linearly-connected region of weight space and can simply be averaged. We trained three RL variants, each
+good at a different target, and took their uniform average.</p>
+<div class="tbl"><table>
+<thead><tr><th>Model</th><th>GenEval</th><th>DPG</th><th>ImageReward</th><th>GEdit</th></tr></thead>
+<tbody>
+<tr><td>A &middot; task-vector sum of two RL runs, aimed at DPG</td><td>0.929</td><td>81.91</td><td>0.848</td><td class="dim">&mdash;</td></tr>
+<tr><td>B &middot; RL with an ImageReward quality reward</td><td>0.873</td><td>81.26</td><td>0.917</td><td>6.450</td></tr>
+<tr><td>C &middot; RL jointly with a reward-gradient loss</td><td>0.887</td><td>80.15</td><td>0.884</td><td>6.710</td></tr>
+<tr class="hl"><td><b>Uniform average of A, B, C</b></td><td>0.902</td><td class="hit"><b>82.19</b></td><td class="hit"><b>0.957</b></td><td class="hit"><b>6.740</b></td></tr>
+</tbody></table></div>
+<figcaption>cfg 1.5. <b>The average beats every one of its members</b> on DPG, ImageReward and GEdit at the same
+time &mdash; it is not an interpolation between them but above all three. It does not win GenEval, where
+member A is stronger. Across seven merges, the average beat both of its endpoints 7 times out of 7.</figcaption>
 
-<p>Editing was the target we never reached, and three separate attempts to fix it with data and
-losses returned nothing: pixel-aligned training pairs, a foreground mask, and a source-consistency
-loss. Three nulls in a row is usually a sign the hypothesis is wrong, so we measured instead of
-trying a fourth.</p>
+<p>The limit matters as much as the effect. Across those seven merges the gain above the straight line
+between endpoints averaged about <b>+0.07</b> on a 0&ndash;1 scale. That is a real and repeatable free lunch,
+and far too small to cover a target the members miss by 0.15. <b>Merging consolidates strengths; it does
+not create one that no member has.</b></p>
 
-<p>The probe is simple. At &sigma;&nbsp;=&nbsp;1 &mdash; pure noise, so the one-step prediction
-reflects only what the <i>conditioning</i> knows &mdash; how well does the model reproduce the cells
-an edit does not touch?</p>
+<h2 id="recipe"><span class="num">07</span>The inference recipe</h2>
+<p>Two settings nobody had questioned turned out to matter more than most of the training runs.</p>
 
-<div class="tbl-scroll">
-<table>
+<h3>Fewer solver steps are better</h3>
+<p>The evaluation protocol used 20 DPM-Solver++ steps because the first script did. Sweeping it, on a
+metric we built for human subjects (section 09), showed quality peaking at <b>8&ndash;16 steps</b>. All four of
+those settings are significantly better than 20, paired over 152 matched images with identical noise; 28
+and 40 steps are not.</p>
+<figure>
+  <svg id="stepchart" class="chart" viewBox="0 0 700 290" style="width:100%;height:auto" role="img"
+       aria-label="Paired quality gain over 20 steps peaks at 8 steps"></svg>
+  <figcaption><b>Paired gain over the 20-step protocol</b>, with ±1 standard error. Filled markers are
+  significant at p&nbsp;&lt;&nbsp;0.05. Twelve steps is <b>+0.100 (t&nbsp;=&nbsp;+2.95) for 40% less diffusion
+  compute</b> &mdash; a quality improvement and a speedup at once, and the default we ship.</figcaption>
+</figure>
+
+<h3>Guidance trades alignment for people</h3>
+<p>Classifier-free guidance is the strongest single lever on GenEval, DPG and ImageReward. It has a cost
+that no alignment benchmark sees.</p>
+<figure>
+  <svg id="cfgchart" class="chart" viewBox="0 0 700 280" style="width:100%;height:auto" role="img"
+       aria-label="Human quality against guidance scale"></svg>
+  <figcaption><b>Paired change in human quality against cfg 1.5</b>, ±1 SE. On the RL model, cfg 3.0 is neutral
+  overall but costs realism (&minus;0.158, t&nbsp;=&nbsp;&minus;2.81); cfg 4.5 with interval guidance is significantly worse outright (&minus;0.171, t&nbsp;=&nbsp;&minus;3.36). On the
+  merged model the effect is stronger: cfg 3.0 costs <b>&minus;0.165 (t&nbsp;=&nbsp;&minus;3.48)</b> overall and
+  &minus;0.303 on realism &mdash; while scoring higher on every alignment benchmark in section 03. We ship cfg 1.5.</figcaption>
+</figure>
+
+<p>A third lever is free: <b>interval guidance</b>, applying guidance only for the early, high-noise part
+of sampling. On the RL model at cfg 3.0 it cuts FID from 15.40 to 14.37 while GenEval moves 0.013 &mdash;
+inside the 0.019 noise floor &mdash; and DPG rises slightly.</p>
+
+<div class="note teal"><span class="lbl">A mistake worth naming</span>
+<p>We once recommended cfg 3.0 on the strength of the alignment benchmarks, before its effect on human
+subjects had been measured. The measurement reversed it. A setting whose cost has not been measured is not
+a recommendation; it is a guess with a number attached.</p></div>
+</div>
+
+<div class="wrap">
+<h2 id="editing"><span class="num">08</span>Editing</h2>
+<p>Eleven edit types from ImgEdit and GEdit. Drag the slider to compare source and result. <b>These are not
+selected</b>: seed 0, one sample each, exactly the predictions the benchmarks scored.</p>
+</div>
+<div class="wide">
+<div class="edgrid">
+  <div>
+    <div class="ba" id="ba" aria-label="Before and after comparison, drag to compare">
+      <img id="ba-src" alt="Source image">
+      <img id="ba-out" class="after" alt="Edited image">
+      <span class="tag l">source</span><span class="tag r">edited</span>
+      <div class="handle" id="ba-h"></div>
+    </div>
+    <p id="ba-inst" style="font-size:15px;margin:14px 2px 0;color:var(--muted)"></p>
+  </div>
+  <div class="edlist" id="edlist"></div>
+</div>
+</div>
+<div class="wrap">
+<figcaption>Mobile-O v2 after GRPO, cfg 1.5, instruction null. Two things to look for: text edits
+("32" → "33") keep the plaque's material and lighting; and <i>global</i> edits (background, style) succeed more
+often than tightly local ones, because &mdash; section 10 &mdash; the model re-renders unedited regions rather
+than copying them.</figcaption>
+</div>
+
+<div class="wrap">
+<h2 id="people"><span class="num">09</span>People and faces</h2>
+<p>Sixteen prompts built to be hard for faces &mdash; wrinkles, freckles, open mouths, glasses reflecting
+a window, hair across the face, two faces cheek to cheek, deep shadow. <b>All four seeds are shown for every
+prompt</b>; switch between them. Nothing here is selected.</p>
+</div>
+<div class="wide">
+<div class="ctrls" role="group" aria-label="Seed" id="seedchips">
+  <button class="chip" data-seed="0" aria-pressed="true">Seed 0</button>
+  <button class="chip" data-seed="1" aria-pressed="false">Seed 1</button>
+  <button class="chip" data-seed="2" aria-pressed="false">Seed 2</button>
+  <button class="chip" data-seed="3" aria-pressed="false">Seed 3</button>
+</div>
+<div class="gal" id="facegal"></div>
+</div>
+<div class="wrap">
+<figcaption>The human-tuned merged model &mdash; a 50/50 average of the RL model and an RL model trained with a
+VQAScore quality reward &mdash; at cfg 1.5, 12 steps. 512×512.</figcaption>
+
+<h3>We needed a metric, and built one badly twice</h3>
+<p>There was no benchmark for anatomical correctness, so we built <b>HumanBench</b>: a local Qwen2.5-VL-72B
+judge scoring six independent axes 1&ndash;5 &mdash; hands, held objects, mouth, face, body, realism &mdash;
+on 38 prompts × 4 samples, with every axis allowed to return "not visible" rather than guess.</p>
+<p>The first version <b>scored real photographs as worse than our generations</b>: hands 2.946 and 51.2%
+defective for real photos, against 2.798 and 60.8% for ours. It had conflated "this hand is small, blurry or
+occluded" with "this hand is anatomically impossible", and photographs are full of the former. It was
+measuring hand <i>size</i>. The second version gated each axis on whether the feature was large enough to
+judge &mdash; and still failed all three of its pre-registered checks.</p>
+<p>What survived is narrower and more useful: <b>HumanBench is paired-only.</b> Noise is seeded from a hash
+of the prompt id, so an image is the same prompt and the same latent in every run, and two settings differ
+only by the thing under test. A paired test over 152 matched images resolves gaps that comparing two means
+cannot. Every human-quality number in this report is a paired difference.</p>
+
+<div class="note"><span class="lbl">The judge corrected us</span>
+<p>From contact sheets, we were sure the dominant failure was <b>hands in contact</b> &mdash; fused fingers in
+handshakes. The judge disagreed. Those sheets had been generated at cfg 4.5; at the shipping cfg 1.5 the
+defect is different &mdash; <b>held-object geometry</b>: mugs with two handles, tools with two heads, a stem
+merging into a hand. The <code>objects</code> axis exists because the metric was right and we were not.</p></div>
+
+<h3>Faces are at the real-photograph ceiling</h3>
+<p>An absolute face score only means something against real photographs. So we scored the <b>real input
+photographs</b> of GEdit's human-retouching subset through the identical rubric and judge &mdash; single
+image, no caption, never told they were generated &mdash; and paired our edits of those same photographs
+against them.</p>
+<div class="tbl"><table>
+<thead><tr><th>Face axis, 1&ndash;5</th><th>score</th><th>vs. real</th><th>t</th><th>verdict</th></tr></thead>
+<tbody>
+<tr><td><b>Real photographs</b></td><td><b>4.956</b></td><td>&mdash;</td><td>&mdash;</td><td class="dim">ceiling</td></tr>
+<tr><td>Edit with SDEdit initialization (strength 0.5)</td><td>4.866</td><td>&minus;0.090</td><td>&minus;1.35</td><td class="hit">indistinguishable</td></tr>
+<tr><td>Human-tuned merged model</td><td>4.797</td><td>&minus;0.103</td><td>&minus;1.41</td><td class="hit">indistinguishable</td></tr>
+<tr><td>RL model</td><td>4.765</td><td>&minus;0.191</td><td>&minus;1.98</td><td>just below</td></tr>
+</tbody></table></div>
+<figcaption>Paired over the same 70 photographs, scored identically. On facial anatomy, two of our settings are
+<b>statistically indistinguishable from real photographs</b>.</figcaption>
+
+<p>Across all 28 generation settings we scored, the face axis spans only 4.645&ndash;4.887 against a real
+ceiling of 4.956. Faces are done. The gap that remains is elsewhere:</p>
+<figure>
+  <svg id="axischart" class="chart" viewBox="0 0 700 230" style="width:100%;height:auto" role="img"
+       aria-label="Gap to real photographs by axis"></svg>
+  <figcaption><b>Distance below the real-photograph ceiling</b>, same 70 photographs, RL model; mouth and held objects are omitted because too few images showed them. Face is closest;
+  realism is furthest. Hands are also where the rate gap is starkest: 11&ndash;17% of our hands are judged
+  defective, against <b>0.0%</b> for real photographs.</figcaption>
+</figure>
+
+<h3>When a specialist metric and a distribution disagree</h3>
+<p>We also ran <a href="https://arxiv.org/html/2406.17100v2">FaceScore</a>, a reward model fine-tuned on pairs of
+high-quality versus degraded faces, over 5,000 FFHQ caption prompts with identical noise per prompt. The official
+implementation reproduces the paper's own published example to four decimals.</p>
+<figure>
+  <svg id="disagreechart" class="chart" viewBox="0 0 700 320" style="width:100%;height:auto" role="img"
+       aria-label="FaceScore and face-region FID rank the same models in opposite orders"></svg>
+  <figcaption><b>Each line is one model.</b> FaceScore (left, higher is better) prefers the three merged models by a
+  wide margin (t&nbsp;&gt;&nbsp;+34 each). Face-region FID against real FFHQ faces (right, lower is better) prefers the
+  RL model &mdash; and ranks the merges <i>further</i> from real in the same order as their FaceScore gains. And
+  every one of our models <b>outscores real FFHQ photographs</b> on FaceScore (4.97).</figcaption>
+</figure>
+<p>This is not a broken metric; it measures what it was trained to measure. FaceScore learned to separate clean
+faces from degraded ones, so it rewards the smooth, well-lit, idealized look that quality-reward RL pushes toward.
+Real photographs have grain, blur and awkward light, and score lower for it. The honest statement is narrow: the
+merged models make faces <i>cleaner</i>; the RL model makes faces <i>closer to real photographs</i>. Which one you
+want is a product decision, not a measurement.</p>
+</div>
+
+<div class="wrap">
+<h2 id="wall"><span class="num">10</span>The editing wall is architectural</h2>
+<p>Editing is the target we have not reached, and three separate attempts to fix it with data and losses all
+returned nothing: pixel-aligned training pairs, a foreground mask, and a source-consistency loss. Three nulls
+in a row usually means the hypothesis is wrong, so instead of trying a fourth we measured.</p>
+<p>The probe: at pure noise, the model's one-step prediction reflects only what its <i>conditioning</i>
+knows. How well does it reproduce the regions an edit is supposed to leave alone?</p>
+<div class="tbl"><table>
 <thead><tr><th>What the model is given</th><th>reconstruction error &darr;</th><th>variance explained</th></tr></thead>
 <tbody>
 <tr><td>the real source image</td><td>0.469</td><td>0.55</td></tr>
-<tr><td>an <i>unrelated</i> source image</td><td>1.043</td><td>&mdash;</td></tr>
-<tr><td><b>simply copying the source latent</b></td><td><b>0.178</b></td><td><b>0.83</b></td></tr>
-</tbody></table>
-</div>
-<figcaption>128 held-out pixel-aligned editing pairs. The model is <b>2.64&times; worse than a copy</b>
-(95% CI [2.24, 3.08]); only 12&ndash;14% of individual pairs beat the copy.</figcaption>
+<tr><td>an unrelated source image</td><td>1.043</td><td>&mdash;</td></tr>
+<tr class="hl"><td><b>no model &mdash; just copy the source latent</b></td><td><b>0.178</b></td><td><b>0.83</b></td></tr>
+</tbody></table></div>
+<figcaption>128 held-out, pixel-aligned editing pairs. <b>The model is 2.64× worse than a plain copy</b>
+(95% CI 2.24&ndash;3.08); only 12&ndash;14% of individual pairs beat it.</figcaption>
 
-<p>The cause is structural. <b>The source image reaches the diffusion transformer only as the
-vision-language model's semantic tokens.</b> The pixels are never there. The model is re-rendering
-the background from a description of it &mdash; which is exactly why no amount of aligned data,
-masking or consistency loss helped. None of them can supply information the input never carried.</p>
+<p>The cause is structural. <b>The source image reaches the diffusion transformer only as the vision-language
+model's semantic tokens.</b> The pixels are never there, so the model re-renders the background from a
+description of it &mdash; which is exactly why aligned data, masking and consistency losses did nothing: none of
+them can supply information the input never carried.</p>
+<p>The field has converged on the same answer. <a href="https://huggingface.co/Qwen/Qwen-Image-Edit">Qwen-Image-Edit</a>
+routes the source through <b>both</b> its vision-language model for semantics <b>and</b> the VAE encoder for
+appearance. We only had the first half. The usual way to add the second &mdash; appending the source as extra
+tokens &mdash; doubles our 256-token budget. So the experiment in flight adds it without adding tokens: the
+source's VAE latent is patch-embedded with the transformer's own patch size and <b>added</b> at block 0, behind a
+learned scalar gate. Latency and the generation path are unchanged. It is the dashed path in the figure in
+section 01.</p>
 
-<p>The literature has converged on the same answer.
-<a href="https://huggingface.co/Qwen/Qwen-Image-Edit">Qwen-Image-Edit</a> feeds the source through
-<b>both</b> Qwen2.5-VL for semantics <b>and</b> the VAE encoder for appearance. We only ever had the
-semantic half. The standard fix &mdash; concatenating the source as extra tokens, which the
-<a href="https://arxiv.org/html/2504.20690">in-context editing</a> line of work shows outperforms
-channel concatenation &mdash; doubles the token count, and our 256 tokens are a latency budget.</p>
-
-<p>So the design under test adds the source without adding tokens: patch-embed the frozen VAE's
-source latent with the DiT's own patch size, and <b>add</b> it at block 0 behind a learned scalar
-gate. Token count, latency and the generation path are all untouched; a zero latent stays an exact
-no-op.</p>
-
-<h3>The experiment that was measuring nothing</h3>
-
-<p>That experiment had been run before and read as a null. It was not a null &mdash; it was a dead
-channel. The side channel was <code>out = tanh(gate) &times; proj(z_src)</code> with
-<b>both</b> factors zero-initialized, which is a zero-gradient fixed point:</p>
-
-<pre><code>d/d gate  = sech²(gate) · proj(z)  = 0    because proj is zero
-d/d proj  = tanh(gate) · z         = 0    because gate is zero</code></pre>
-
-<p>The appeal of the double zero is real &mdash; it makes step 0 bit-identical to the starting
-checkpoint. But only <i>one</i> factor needs to be zero for that, and zeroing both creates a saddle
-the optimizer cannot leave. The run trained for 487 steps with <code>tanh(gate)</code> printing
-exactly <code>+0.0000</code>.</p>
-
-<p>The dangerous part is not the bug, it is that <b>a dead channel scores identically to its own
-control</b>. A 31-hour run would have completed, produced a number matching the baseline, and been
-written up as "the architecture idea does not work". Three guards now exist: the projection is
-seeded from the DiT's own patch-embedding weight, a smoke test asserts the projection is non-zero,
-and training <i>crashes</i> if the gate is still exactly zero after 200 batches.</p>
-
+<h3>The experiment that had been measuring nothing</h3>
+<p>This had been attempted before and read as a null. It was not a null; the channel was dead. It was built as
+<code>tanh(gate) × proj(z_source)</code> with <b>both</b> factors initialized to zero &mdash; a fixed point with
+no gradient:</p>
+<pre style="border-radius:12px"><code>∂/∂gate = sech²(gate) · proj(z)  =  0     because proj = 0
+∂/∂proj = tanh(gate) · z         =  0     because gate = 0</code></pre>
+<p style="margin-top:18px">Zeroing <i>one</i> factor makes step 0 identical to the starting model, which is the
+point. Zeroing both creates a saddle the optimizer cannot leave. The run trained 487 steps with the gate
+printing exactly <code>+0.0000</code>. The danger is not the bug: <b>a dead channel scores identically to its own
+control</b>, so a 31-hour run would have finished and been written up as "the idea does not work".</p>
+<p>The fix seeds the projection from the transformer's own patch-embedding weights, keeps the zero on the
+scalar gate alone, and <b>crashes the run</b> if the gate is still exactly zero after 200 batches.</p>
 <figure>
-  <svg id="gatechart" viewBox="0 0 700 250" style="width:100%;height:auto" role="img"
-       aria-label="Gate value rising from zero over training batches"></svg>
-  <figcaption><b>The channel is alive.</b> <code>tanh(gate)</code> over training, on the run in
-  flight at the time of writing. It leaves zero at batch 200 and climbs monotonically &mdash; the
-  diffusion transformer is leaning on the source latent harder as training proceeds. A channel with
-  nothing to offer would stay pinned near zero, which is precisely what the broken version did.</figcaption>
+  <svg id="gatechart" class="chart" viewBox="0 0 700 260" style="width:100%;height:auto" role="img"
+       aria-label="Gate value climbing steadily from zero"></svg>
+  <figcaption><b>The channel is alive.</b> tanh(gate) over the run in flight: it leaves zero by batch 200 and
+  climbs steadily &mdash; the transformer is leaning on the source latent harder as training proceeds. A channel
+  with nothing to offer would stay pinned at zero, which is exactly what the broken version did. This proves the
+  channel is <i>used</i>, not that preservation <i>improved</i>; that is decided when training finishes.</figcaption>
 </figure>
-
-<p>This is a process result, not a quality result. A rising gate proves the channel is
-<i>used</i>, not that preservation <i>improved</i>. That is decided by the source-preservation L1
-against two already-measured controls, and by re-running the 2.64&times; probe. Those numbers are
-not in yet.</p>
 </div>
 
 <div class="wrap">
-<h2 id="hires"><span class="num">07</span>1024px for three milliseconds</h2>
-
-<p>The 256-token budget rules out generating at a 32&times;32 latent: it would roughly quadruple the
-transformer cost, which is the entire thing the budget exists to prevent. So 1024px is produced
-<b>after</b> the diffusion model instead.</p>
-
-<p>The frozen DC-AE decoder emits its last hidden features &mdash; 128 channels at 512px, the tensor
-that normally feeds <code>conv_out</code> &mdash; and a trained 106M head maps those directly to
-1024px RGB, anchored on a bicubic upsample of the ordinary 512px decode. The diffusion transformer
-and the autoencoder are both untouched.</p>
-
-<div class="stats">
-  <div class="stat"><div class="v">459 ms</div><div class="k">per image at 512px<br>batch of 8</div></div>
-  <div class="stat"><div class="v">462 ms</div><div class="k">per image at 1024px<br>batch of 8</div></div>
-  <div class="stat"><div class="v">+0.7%</div><div class="k">total cost of<br>4&times; the pixels</div></div>
-  <div class="stat"><div class="v">1.0/255</div><div class="k">mean difference when<br>downscaled back to 512</div></div>
-</div>
-
-<p>Rendering the same prompt and seed at both sizes and downscaling the 1024 result back to 512
-differs from the native 512px output by a mean of <b>1.0/255</b>. It is the same image, decoded
-better &mdash; not additional diffusion detail, and it should not be described as such.</p>
-
-<p>We chose this over the alternative &mdash; a SwinIR upsampler widening the latent 16&times;16 to
-32&times;32 <i>before</i> the frozen decode &mdash; on a reconstruction eval: FID 1.76 vs 2.077 and
-OCR 47.9 vs 40.</p>
-
-<h2 id="use"><span class="num">08</span>Using it</h2>
-
-<p>The released checkpoint is the trained head only: 602 tensors, 548 in the diffusion transformer
-and 54 in the connector. The vision-language model is frozen during training, so it is not
-duplicated &mdash; it and the autoencoder are fetched from their own repositories on first run.</p>
-
+<h2 id="use"><span class="num">11</span>Use it</h2>
+<p>Everything downloads on first run &mdash; the trained head from Hugging Face, and the frozen vision-language
+model and autoencoder from their own repositories.</p>
 <div class="tabs" role="tablist">
   <button class="tab" role="tab" aria-selected="true" data-t="t1">Install</button>
   <button class="tab" role="tab" aria-selected="false" data-t="t2">Generate</button>
@@ -639,292 +909,317 @@ duplicated &mdash; it and the autoencoder are fetched from their own repositorie
 cd mobileov2-minicpm
 pip install -r requirements.txt
 
-# transformers &gt;= 5 is required: MiniCPM-V-4.6 is a native
-# transformers model and the import fails on 4.x</code></pre></div>
-<div class="tabpanel" id="t2" role="tabpanel" hidden><pre><code>python infer.py \
-  --prompt "a woman holding a ceramic mug in a sunlit kitchen" \
-  --out out/gen.png
+<span class="c"># transformers &gt;= 5 is required: MiniCPM-V-4.6 is a native</span>
+<span class="c"># transformers model, and the import fails on 4.x</span></code></pre></div>
+<div class="tabpanel" id="t2" role="tabpanel" hidden><pre><code>python infer.py --prompt "a red fox in a snowy meadow at dawn" --out out/fox.png
 
-# several prompts at once -- --out becomes a directory.
-# batch them: the first call pays ~2s of CUDA warm-up
-python infer.py --prompt "a cat" "a dog" --out out/</code></pre></div>
-<div class="tabpanel" id="t3" role="tabpanel" hidden><pre><code>python infer.py \
-  --image photo.jpg \
-  --prompt "make it snow" \
-  --out out/edit.png</code></pre></div>
-<div class="tabpanel" id="t4" role="tabpanel" hidden><pre><code>python infer.py --size 1024 \
-  --prompt "a man repairing a bicycle wheel" \
-  --out out/big.png
+<span class="c"># batch prompts: the first call pays ~2 s of CUDA warm-up</span>
+python infer.py --prompt "a cat" "a dog" "a lighthouse" --out out/</code></pre></div>
+<div class="tabpanel" id="t3" role="tabpanel" hidden><pre><code>python infer.py --image photo.jpg --prompt "make it snow" --out out/edit.png</code></pre></div>
+<div class="tabpanel" id="t4" role="tabpanel" hidden><pre><code>python infer.py --size 1024 --prompt "a lighthouse at dusk" --out out/big.png
 
-# works for editing too; the 426MB decoder head
-# downloads once from the same repository</code></pre></div>
+<span class="c"># the 426 MB decoder head downloads once; works for editing too</span>
+python infer.py --size 1024 --image photo.jpg --prompt "make it autumn" --out out/big_edit.png</code></pre></div>
+<p style="margin-top:22px">Defaults are <b>12 steps at cfg 1.5</b>. Both look low and neither is an oversight
+&mdash; section 07 has the argument for each. Raising either improves a benchmark column and makes the pictures
+worse.</p>
 
-<p style="margin-top:22px">Defaults are <b>12 steps at cfg 1.5</b>. Both look low and neither is an
-oversight &mdash; section 03 is the argument for the first and section 03's guidance chart for the
-second. Raising either improves a benchmark column and makes the pictures worse.</p>
+<h2 id="open"><span class="num">12</span>What is still open</h2>
+<p><b>DPG &ge; 85.</b> The record is 84.61 across every setting we measured, and stock SANA-600M reaches 84.04
+without any of our training, so the last point is not obviously ours to win. Two confident explanations of the
+ceiling &mdash; first that it saturates, then that the gains were constant and 85 was reachable &mdash; were both
+wrong, and both were curve-fitting inside a 0.78-point noise floor.</p>
+<p><b>FID &le; 8 with GenEval &ge; 0.9.</b> The architecture reaches FID 7.26 unconditioned by our training, and a
+flow-matching-only run of ours hit 5.96 &mdash; so the target is inside the envelope, and what costs it is the
+conditioning path and RL. Next is <a href="https://arxiv.org/pdf/2410.06940">representation alignment</a>: a
+training-only loss that aligns an early transformer block with DINOv2 features. It fits unusually cleanly &mdash;
+our 16×16 latent is 256 tokens and DINOv2 ViT-B/14 at 224px is exactly 256 patch tokens &mdash; and it adds no
+tokens, parameters or latency at inference.</p>
+<p><b>ImgEdit &ge; 3.5</b> waits on the source-latent experiment in section 10.</p>
 
-<h2 id="open"><span class="num">09</span>What is still open</h2>
-
-<p><b>DPG &ge; 85 was never reached by anything.</b> The record across 121 measured settings is
-84.61, and stock SANA-600M reaches 84.04 without any of our training, so the remaining 0.4&ndash;1.0
-is not obviously ours to win. Two separate confident explanations for the ceiling &mdash; first that
-it saturates, then that the increments were constant and 85 was reachable &mdash; were both wrong,
-and both were shape-fitting inside a 0.78-point noise floor.</p>
-
-<p><b>FID &le; 8 with GenEval &ge; 0.9 remains unsolved</b>, but not for the reason we assumed for
-months. Stock SANA-600M scores 7.264 and our flow-matching-only run hit 5.955 through the identical
-scorers, so the envelope contains the target. The loss is in the conditioning path and in
-reinforcement learning, which gives back roughly 3.3 FID on a good supervised checkpoint. The next
-attempt is <a href="https://arxiv.org/pdf/2410.06940">representation alignment</a>, which is a
-training-time loss only &mdash; it adds no tokens, no parameters at inference and no latency. Our
-16&times;16 latent is 256 tokens and DINOv2 ViT-B/14 at 224px is exactly 256 patch tokens, so the
-alignment is one-to-one with no pooling.</p>
-
-<p><b>ImgEdit &ge; 3.5</b> waits on the source-latent experiment in section 06.</p>
-
-<h3>Six things worth taking away</h3>
+<h3>Six things we would tell ourselves at the start</h3>
 <ol>
-<li><b>Calibrate against real data.</b> Two rubrics and one specialist metric all ranked real
-photographs below our generations. Every one of those was caught by scoring real data through the
-same pipeline, and none would have been caught by reading the outputs.</li>
-<li><b>A mechanism that is a no-op at initialization must be shown to leave the no-op.</b> A dead
-channel is indistinguishable from a refuted hypothesis.</li>
-<li><b>Pair everything.</b> Fixed seeds keyed on the prompt turn a noisy comparison of two means
-into a paired test that resolves differences an order of magnitude smaller.</li>
-<li><b>Know your noise floor before claiming a trend.</b> GenEval below 0.019, DPG below 0.78
-points, ImgEdit below 0.05 &mdash; several confident stories here were fitted to movement inside
-those bands.</li>
-<li><b>Sweep the parameters nobody questions.</b> The single best quality-per-compute result was a
-default argument that had never been examined.</li>
-<li><b>Three nulls in a row means measure, not iterate.</b> One probe explained all three and
-redirected the work from data and losses to architecture.</li>
+<li><b>Score real data through your own metric.</b> Two rubrics and one published metric all ranked real
+photographs below our generations. Every one was caught that way, and none would have been caught by looking.</li>
+<li><b>Anything that is a no-op at initialization must be shown to leave the no-op.</b> A dead channel is
+indistinguishable from a refuted idea.</li>
+<li><b>Pair everything.</b> Seeding noise on the prompt turns a comparison of two noisy means into a paired test
+that resolves differences an order of magnitude smaller.</li>
+<li><b>Know the noise floor before you see a trend.</b> GenEval under 0.019, DPG under 0.78, ImgEdit under 0.05
+&mdash; several stories here were fitted to movement inside those bands.</li>
+<li><b>Sweep the defaults nobody questions.</b> The best quality-per-compute result in the project was a default
+argument.</li>
+<li><b>After three nulls, measure instead of iterating.</b> One probe explained all three and moved the work from
+data and losses to architecture.</li>
 </ol>
-
-<hr class="sec">
-<p style="font-size:15px;color:var(--muted)">
-<b>Artifacts.</b>
-Checkpoint &middot; <a href="https://huggingface.co/ahmedheakl/rand-mobile">ahmedheakl/rand-mobile</a> &nbsp;&middot;&nbsp;
-RL baseline &middot; <a href="https://huggingface.co/ahmedheakl/rand-mobile-grpo">ahmedheakl/rand-mobile-grpo</a> &nbsp;&middot;&nbsp;
-Inference code &middot; <a href="https://github.com/ahmedheakl/mobileov2-minicpm">mobileov2-minicpm</a>
-</p>
 </div>
 
 <footer><div class="wrap">
-  <p>Mobile-O v2 &mdash; technical report, September 2026. Benchmarks scored with official
-  implementations; ImgEdit and GEdit use a local Qwen2.5-VL-72B judge and are not comparable to
-  GPT-4o leaderboard numbers.</p>
+  <p><b style="color:var(--muted)">Mobile-O v2</b> &middot; technical report, September 2026 &middot;
+  <a href="https://github.com/ahmedheakl/mobileov2-minicpm">code</a> &middot;
+  <a href="https://huggingface.co/ahmedheakl/rand-mobile">weights</a></p>
+  <p>GenEval, DPG-Bench, MJHQ-30K FID/CLIP/ImageReward, PRISM and CVTG use official implementations. ImgEdit and GEdit
+  are judged by a local Qwen2.5-VL-72B and are not comparable to GPT-4o-judged leaderboards. Human-quality numbers are
+  paired differences on identical prompts and noise.</p>
 </div></footer>
 
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Image viewer">
+  <button class="x" id="lbx" aria-label="Close">×</button>
+  <button class="nav prev" id="lbp" aria-label="Previous">‹</button>
+  <button class="nav next" id="lbn" aria-label="Next">›</button>
+  <div class="in"><img id="lbimg" alt=""><div class="txt" id="lbtxt"></div></div>
+</div>
 <script>
+var GEN=[{"f": "gen_01_portrait", "g": "photo", "cat": "portrait", "p": "A close-up portrait of an elderly fisherman with a weathered face and a short white beard, wearing a bright yellow raincoat. Warm golden hour light rakes across his cheek from the left, leaving the right side in soft shadow. The harbour behind him is thrown far out of focus into blue-grey bokeh."}, {"f": "gen_02_wildlife", "g": "photo", "cat": "animal", "p": "A red fox standing alert in a snow-covered meadow at dawn, its orange fur vivid against the white ground, breath visible in the cold air. Bare birch trunks recede into soft mist behind it. Shot on a telephoto lens with a shallow depth of field."}, {"f": "gen_03_landscape", "g": "scene", "cat": "landscape", "p": "A vast mountain valley at sunrise, layered ridgelines fading from deep blue in the foreground to pale lavender at the horizon. A river of low cloud fills the valley floor, lit orange where the first sunlight strikes it. Snow caps the highest peaks."}, {"f": "gen_04_food", "g": "detail", "cat": "food", "p": "An overhead shot of a rustic wooden table with a bowl of steaming ramen: golden broth, a soft-boiled egg halved to show the runny yolk, sliced pork, spring onion and a sheet of nori. Chopsticks rest on a folded linen napkin beside it. Soft diffused daylight from a window."}, {"f": "gen_05_interior", "g": "scene", "cat": "architecture", "p": "The interior of a modern library atrium, four floors of pale oak shelving curving around an open void, a glass ceiling above flooding the space with daylight. A few readers sit at long tables on the ground floor. Strong clean perspective lines converge toward the far wall."}, {"f": "gen_06_vehicle", "g": "detail", "cat": "vehicle", "p": "A vintage teal convertible parked on a coastal road at dusk, its chrome bumper and polished paintwork reflecting the last pink light of the sky. The ocean stretches out behind a low stone wall. Headlights are on, casting a warm pool on the asphalt."}, {"f": "gen_07_stilllife", "g": "detail", "cat": "still life", "p": "A still life of three glass bottles of different heights on a dark slate surface, backlit so the light refracts through the green, amber and clear glass. A scattering of coffee beans lies in front of them. Deep shadows, single hard light source from behind."}, {"f": "gen_08_fantasy", "g": "scene", "cat": "surreal", "p": "A giant whale drifting through the sky above a quiet seaside town, barnacles on its underside, seabirds circling around it. Villagers in the cobbled square below look up. The light is soft and overcast, and the whale casts a vast shadow across the rooftops."}, {"f": "gen_09_macro", "g": "detail", "cat": "macro", "p": "An extreme macro photograph of a dew-covered dragonfly resting on a blade of grass in early morning. Every facet of its compound eye is sharp, its wings are translucent with visible veins, and droplets of water bead along its body. The background dissolves into green bokeh."}, {"f": "gen_10_cityscape", "g": "scene", "cat": "night", "p": "A rain-slick street in a dense Asian city at night, dozens of neon signs in pink, cyan and red reflected in the puddles. A lone figure with a transparent umbrella walks away from the camera. Steam rises from a grate. Long exposure, wet asphalt, deep saturated colour."}, {"f": "gen_11_underwater", "g": "scene", "cat": "underwater", "p": "An underwater scene of a coral reef in clear turquoise water, shafts of sunlight cutting down from the surface. A school of small yellow fish moves through the frame, and a sea turtle glides past a large brain coral. Fine particles drift in the light beams."}, {"f": "gen_12_action", "g": "photo", "cat": "action", "p": "A skateboarder mid-air over a concrete bowl at a skatepark, board tilted, arms out for balance, caught against a bright blue sky with a few thin clouds. The rim of the bowl and the crowd behind are slightly motion-blurred, the rider sharp."}, {"f": "gen_13_painting", "g": "style", "cat": "style", "p": "An oil painting in thick impasto of a field of sunflowers under a turbulent evening sky, heavy visible brushstrokes, deep yellows and ultramarine blues, in the manner of post-impressionist landscape painting. Canvas texture is visible."}, {"f": "gen_14_text", "g": "style", "cat": "text rendering (hard)", "p": "A weathered wooden shop sign hanging above a cobbled street, with the words \"THE DAILY GRIND\" carved and painted in cream serif letters on a dark green background. A small painted coffee cup sits below the text. Overcast afternoon light."}, {"f": "gen_15_counting", "g": "detail", "cat": "composition", "p": "Three ceramic mugs arranged in a row on a white marble counter: the left one matte black, the middle one glossy red, the right one speckled blue. Behind them stands a small green potted succulent. Even soft studio lighting, clean white background."}, {"f": "gen_16_child_crayons", "g": "long", "cat": "DPG-Bench prompt", "p": "A young child with brown hair, focused intently, sits at a wooden table scattered with colorful crayons and paper. In their small hand is a bright red pencil, with which they are diligently drawing a vibrant blue flower that's taking shape on the white sheet before them. Sunlight filters through a nearby window, casting a warm glow on the child's artwork."}, {"f": "gen_17_truck_porsche", "g": "long", "cat": "DPG-Bench prompt", "p": "A vibrant orange pickup truck parked beside a sleek yellow Porsche 911 on a smooth gray asphalt road. The Porsche's polished surface reflects the sunlight, highlighting its aerodynamic shape and the truck's sturdy, boxy frame. Between the two vehicles, the contrasting sizes and designs are evident, with the pickup's raised suspension towering over the low-profile sports car."}, {"f": "gen_18_train_station", "g": "long", "cat": "DPG-Bench prompt", "p": "A traveler stands in a busy train station, clad in a tan jacket that falls to their mid-thigh, paired with a snugly fitted gray scarf around their neck. On their back, a worn brown backpack suggests a journey in progress. They are intently gazing at the cell phone in their hands, perhaps checking a schedule or reading a message. Before them, a sleek silver train rests on the track, its doors poised to open and welcome passengers to the next leg of their travels."}, {"f": "gen_19_orange_flowers", "g": "long", "cat": "DPG-Bench prompt", "p": "a vibrant plant with star-shaped orange flowers blooming amidst lush green leaves. The plant is potted in a terracotta container that sits on a wooden shelf. Around it, other houseplants contribute to a small indoor garden atmosphere."}, {"f": "gen_20_tree_fence", "g": "long", "cat": "DPG-Bench prompt", "p": "a sturdy tree with a thick trunk and sprawling branches that have intertwined with the metal links of a silver chain-link fence. the fence is partially enveloped by the tree's roots and bark, creating a unique blend of natural and man-made elements. the surrounding area is dotted with green grass and a few scattered wildflowers."}];
+var EDITS=[{"f": "edit_e01_replace", "t": "replace", "p": "Replace the dragon made of pipe cleaners in the image with a bright yellow rubber duck. ", "b": "imgedit"}, {"f": "edit_e02_background", "t": "background", "p": "Change the cloudy and foggy hilltop background to a bright, sunny beach environment.", "b": "imgedit"}, {"f": "edit_e03_motion_change", "t": "motion change", "p": "change the action of the horses to galloping", "b": "gedit"}, {"f": "edit_e04_style_change", "t": "style change", "p": "Switch to a Ghibli style.", "b": "gedit"}, {"f": "edit_e05_text_change", "t": "text change", "p": "Replace the text '32' with '33'", "b": "gedit"}, {"f": "edit_e06_add", "t": "add", "p": "Add a bicycle near the fence on the left side of the image.", "b": "imgedit"}, {"f": "edit_e07_remove", "t": "remove", "p": "Remove the helicopter in the foreground.", "b": "imgedit"}, {"f": "edit_e08_adjust", "t": "adjust", "p": "Change the skin tone to a lighter shade.", "b": "imgedit"}, {"f": "edit_e09_extract", "t": "extract", "p": "Extract the brown trout fish from the image.", "b": "imgedit"}, {"f": "edit_e10_style", "t": "style", "p": "Transfer the image into a classic impasto oil-painting style.", "b": "imgedit"}, {"f": "edit_e11_compose", "t": "compose", "p": "Remove the laptop from the person's lap, and change the color of the couch to light blue.", "b": "imgedit"}];
+var FACES=[{"c": "face_closeup", "i": 0, "p": "a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes, natural window light"}, {"c": "face_closeup", "i": 1, "p": "a close-up portrait of a young woman with freckles smiling warmly, shallow depth of field"}, {"c": "face_closeup", "i": 2, "p": "a studio headshot of a middle-aged Black man with a short beard, soft key light"}, {"c": "face_closeup", "i": 3, "p": "a close-up portrait of an East Asian woman in her thirties, neutral expression, grey background"}, {"c": "face_closeup", "i": 4, "p": "a candid close-up of a laughing child with curly hair, outdoor sunlight"}, {"c": "face_closeup", "i": 5, "p": "a dramatic side-lit portrait of a South Asian man looking away from the camera"}, {"c": "face_closeup", "i": 6, "p": "a close-up of an older woman with silver hair and glasses reading, warm lamplight"}, {"c": "face_closeup", "i": 7, "p": "a professional headshot of a blonde woman in a business suit against a white background"}, {"c": "face_hard", "i": 0, "p": "a portrait of a man with his hand resting on his chin, fingers visible against his face"}, {"c": "face_hard", "i": 1, "p": "two friends standing cheek to cheek smiling at the camera, close-up"}, {"c": "face_hard", "i": 2, "p": "a woman with long hair blowing across her face in the wind, backlit"}, {"c": "face_hard", "i": 3, "p": "a person wearing round glasses reflecting a window, close-up portrait"}, {"c": "face_hard", "i": 4, "p": "a close-up of a face half in shadow, strong chiaroscuro lighting"}, {"c": "face_hard", "i": 5, "p": "an elderly couple's faces close together, both smiling, soft focus background"}, {"c": "face_hard", "i": 6, "p": "a portrait of a man mid-laugh with teeth visible and eyes crinkled"}, {"c": "face_hard", "i": 7, "p": "a baby's face resting on a parent's shoulder, very close up"}];
 (function(){
 "use strict";
 var NS="http://www.w3.org/2000/svg";
 function el(n,a){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);return e;}
-function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
-function txt(x,y,s,cls,anchor){var t=el("text",{x:x,y:y,"text-anchor":anchor||"middle"});
-  if(cls)t.setAttribute("class",cls);t.textContent=s;return t;}
+function cv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function T(x,y,s,cls,anc){var t=el("text",{x:x,y:y,"text-anchor":anc||"middle"});if(cls)t.setAttribute("class",cls);t.textContent=s;return t;}
+function tip(node,s){var t=el("title",{});t.textContent=s;node.appendChild(t);return node;}
+function $(id){return document.getElementById(id);}
+function each(sel,f){Array.prototype.forEach.call(document.querySelectorAll(sel),f);}
 
-/* ---------- theme ---------- */
-var tb=document.getElementById("theme");
-function curTheme(){var s=document.documentElement.getAttribute("data-theme");
-  if(s)return s;return matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";}
-tb.addEventListener("click",function(){
-  var next=curTheme()==="dark"?"light":"dark";
-  document.documentElement.setAttribute("data-theme",next);
-  try{localStorage.setItem("mo-theme",next);}catch(e){}
-  drawAll();
-});
+/* ---------- theme + progress ---------- */
 try{var sv=localStorage.getItem("mo-theme");if(sv)document.documentElement.setAttribute("data-theme",sv);}catch(e){}
+function cur(){var s=document.documentElement.getAttribute("data-theme");return s||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");}
+$("theme").addEventListener("click",function(){var n=cur()==="dark"?"light":"dark";
+  document.documentElement.setAttribute("data-theme",n);try{localStorage.setItem("mo-theme",n);}catch(e){}drawAll();});
+addEventListener("scroll",function(){var h=document.documentElement;var p=h.scrollTop/((h.scrollHeight-h.clientHeight)||1);
+  $("prog").style.width=(Math.max(0,Math.min(1,p))*100)+"%";},{passive:true});
 
-/* ---------- scoreboard filter ---------- */
-var sbChips=document.querySelectorAll('.chip[data-f]');
-sbChips.forEach(function(c){c.addEventListener("click",function(){
-  sbChips.forEach(function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
+/* ---------- architecture ---------- */
+var ARCH={
+ prompt:["Text prompt","The prompt, or the edit instruction when editing. Tokenized with the vision-language model's own chat template, byte-identical to training.",["e1"]],
+ image:["Source image · editing only","Sliced into up to nine 448px tiles plus an overview and read by the vision tower. It reaches the diffusion model only as semantic tokens &mdash; the root of section 10.",["e2","e10"]],
+ vlm:["MiniCPM-V-4.6 · frozen · 1.30B","Reads the prompt and, for edits, the source image. Frozen throughout, so its understanding is exactly the released model's (MMMU 53.8). Its last hidden layer is the conditioning.",["e1","e2","e3"]],
+ conn:["Connector · trained · 8.8M","Fuses the last hidden layer, compresses 1024→512, refines with two depthwise-conv blocks (local) and two attention blocks (global), then projects to the 2304-d cross-attention space.",["e3","e4"]],
+ dit:["SANA-600M diffusion transformer · trained · 591.7M","28 blocks of linear attention with cross-attention to the connector. Denoises a 32×16×16 latent: 256 tokens, fixed. Ships at 12 DPM-Solver++ steps, cfg 1.5.",["e4","e5","e6","e11"]],
+ noise:["Gaussian noise · 32×16×16","In evaluation it is seeded from a hash of the prompt, so every model sees identical noise and every comparison is paired.",["e5"]],
+ dec:["DC-AE decoder · frozen","32× spatial compression; decodes the latent to 512px in 28.5 ms. Must run in bf16 &mdash; fp16 underflows inside it and silently returns zeros.",["e6","e7","e8"]],
+ head:["1024px decoder head · ours · 106.5M","Reads the decoder's last hidden features (128 channels at 512px) and learns detail on top of a bicubic ×2 anchor. +58 ms, content-neutral. Section 05.",["e8","e9"]],
+ venc:["VAE encoder · experimental","Encodes the source to a 32×16×16 latent that is patch-embedded and added at block 0 behind a learned gate. Adds no tokens. Training now &mdash; section 10.",["e10","e11"]],
+ o512:["512 × 512 output","817 ms end-to-end at batch 1, 20 steps, on one RTX PRO 6000.",["e7"]],
+ o1024:["1024 × 1024 output","874 ms end-to-end through the decoder head: +7.1% for four times the pixels.",["e9"]]
+};
+var svgA=$("archsvg"), det=$("archdetail");
+function archOn(k){
+  if(!k||!ARCH[k]){svgA.classList.remove("dim");each("#archsvg .on",function(n){n.classList.remove("on");});
+    det.innerHTML="<b>Tap a block</b> to see what it does, whether it is trained, and what it costs.";return;}
+  svgA.classList.add("dim");each("#archsvg .on",function(n){n.classList.remove("on");});
+  var nd=svgA.querySelector('[data-n="'+k+'"]'); if(nd)nd.classList.add("on");
+  ARCH[k][2].forEach(function(e){var g=svgA.querySelector('[data-e="'+e+'"]');if(g)g.classList.add("on");});
+  det.innerHTML="<b>"+ARCH[k][0]+".</b> "+ARCH[k][1];
+}
+each("#archsvg .node",function(n){var k=n.getAttribute("data-n");
+  n.addEventListener("mouseenter",function(){archOn(k);});
+  n.addEventListener("focus",function(){archOn(k);});
+  n.addEventListener("click",function(e){e.stopPropagation();archOn(k);});});
+svgA.addEventListener("mouseleave",function(){archOn(null);});
+
+/* ---------- lightbox ---------- */
+var LB={list:[],i:0};
+function lbShow(){var it=LB.list[LB.i];$("lbimg").src=it.src;$("lbimg").alt=it.p;
+  $("lbtxt").innerHTML="<small>"+it.k+"</small>"+it.p.replace(/</g,"&lt;");}
+function lbOpen(list,i){if(!list||!list.length)return;LB.list=list;LB.i=Math.max(0,Math.min(i,list.length-1));lbShow();$("lb").classList.add("open");$("lbx").focus();}
+function lbClose(){$("lb").classList.remove("open");}
+$("lbx").addEventListener("click",lbClose);
+$("lb").addEventListener("click",function(e){if(e.target===$("lb"))lbClose();});
+$("lbp").addEventListener("click",function(){LB.i=(LB.i-1+LB.list.length)%LB.list.length;lbShow();});
+$("lbn").addEventListener("click",function(){LB.i=(LB.i+1)%LB.list.length;lbShow();});
+addEventListener("keydown",function(e){if(!$("lb").classList.contains("open"))return;
+  if(e.key==="Escape")lbClose();if(e.key==="ArrowLeft")$("lbp").click();if(e.key==="ArrowRight")$("lbn").click();});
+
+/* ---------- generation gallery ---------- */
+var GL=GEN.map(function(g){return{src:"assets/gen/"+g.f+".jpg",p:g.p,k:g.cat,g:g.g};});
+var gg=$("gengal");
+GL.forEach(function(it,i){var b=document.createElement("button");b.setAttribute("data-g",it.g);
+  b.innerHTML='<img src="'+it.src+'" alt="" loading="lazy"><span class="cap">'+it.k+'</span>';
+  b.querySelector("img").alt=it.p;
+  b.addEventListener("click",function(){var vis=GL.filter(function(x){return cg==="all"||x.g===cg;});var k=vis.indexOf(it);if(k<0){vis=GL;k=i;}lbOpen(vis,k);});
+  gg.appendChild(b);});
+var cg="all";
+each("#genchips .chip",function(c){c.addEventListener("click",function(){
+  each("#genchips .chip",function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
+  cg=c.getAttribute("data-g");
+  Array.prototype.forEach.call(gg.children,function(b){b.hidden=!(cg==="all"||b.getAttribute("data-g")===cg);});});});
+
+/* ---------- face gallery ---------- */
+var fg=$("facegal"), seed=0;
+function facesDraw(){fg.innerHTML="";
+  var list=FACES.map(function(f){var id=f.c+"_"+("0"+f.i).slice(-2)+"_"+seed;
+    return{src:"assets/faces/"+id+".jpg",p:f.p,k:(f.c==="face_hard"?"hard case":"close-up")+" · seed "+seed};});
+  list.forEach(function(it,i){var b=document.createElement("button");
+    b.innerHTML='<img src="'+it.src+'" alt="" loading="lazy"><span class="cap">'+it.k+'</span>';
+    b.querySelector("img").alt=it.p;
+    b.addEventListener("click",function(){lbOpen(list,i);});fg.appendChild(b);});}
+each("#seedchips .chip",function(c){c.addEventListener("click",function(){
+  each("#seedchips .chip",function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
+  seed=+c.getAttribute("data-seed");facesDraw();});});
+facesDraw();
+
+/* ---------- editing before / after ---------- */
+var ba=$("ba"), el_=$("edlist"), pos=50;
+function baSet(p){pos=Math.max(0,Math.min(100,p));$("ba-out").style.clipPath="inset(0 0 0 "+pos+"%)";$("ba-h").style.left=pos+"%";}
+function edShow(i){var e=EDITS[i];$("ba-src").src="assets/edit/"+e.f+"_src.jpg";$("ba-out").src="assets/edit/"+e.f+"_out.jpg";
+  $("ba-inst").innerHTML="<b style='color:var(--ink)'>“"+e.p.replace(/</g,"&lt;")+"”</b>";
+  each("#edlist button",function(b,j){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false");});baSet(50);}
+EDITS.forEach(function(e,i){var b=document.createElement("button");b.setAttribute("data-i",i);
+  b.innerHTML='<span class="ty">'+e.t+'</span>'+e.p.replace(/</g,"&lt;");
+  b.addEventListener("click",function(){edShow(i);});el_.appendChild(b);});
+function baMove(ev){var r=ba.getBoundingClientRect();var x=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;baSet(x/r.width*100);}
+var drag=false;
+ba.addEventListener("pointerdown",function(e){drag=true;baMove(e);});
+addEventListener("pointermove",function(e){if(drag)baMove(e);});
+addEventListener("pointerup",function(){drag=false;});
+ba.setAttribute("tabindex","0");
+ba.addEventListener("keydown",function(e){if(e.key==="ArrowLeft")baSet(pos-5);if(e.key==="ArrowRight")baSet(pos+5);});
+edShow(4);
+
+/* ---------- fox zoom ---------- */
+each('.chip[data-z]',function(c){c.addEventListener("click",function(){
+  each('.chip[data-z]',function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
+  var z=c.getAttribute("data-z");each(".cmp3 img",function(im){im.src=im.getAttribute("data-"+z);});});});
+
+/* ---------- scoreboard ---------- */
+each("#sbchips .chip",function(c){c.addEventListener("click",function(){
+  each("#sbchips .chip",function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
   var f=c.getAttribute("data-f");
-  document.querySelectorAll("#sb tbody tr").forEach(function(r){
-    var g=r.getAttribute("data-g");
-    r.style.display=(f==="all"||(f==="best"&&g==="best")||(f==="ref"&&g==="ref"))?"":"none";
-  });
-});});
-
-/* ---------- sortable scoreboard ---------- */
-document.querySelectorAll("#sb th").forEach(function(th){
-  th.style.cursor="pointer"; var dir=1;
-  th.addEventListener("click",function(){
-    var i=+th.getAttribute("data-s"), tb=document.querySelector("#sb tbody");
-    var rows=Array.prototype.slice.call(tb.querySelectorAll("tr"));
-    rows.sort(function(a,b){
-      var A=a.children[i].textContent.trim(), B=b.children[i].textContent.trim();
-      var na=parseFloat(A), nb=parseFloat(B);
-      if(isNaN(na)&&isNaN(nb))return 0; if(isNaN(na))return 1; if(isNaN(nb))return -1;
-      return (na-nb)*dir;
-    });
-    dir=-dir; rows.forEach(function(r){tb.appendChild(r);});
-  });
-});
+  each("#sb tbody tr",function(r){var g=r.getAttribute("data-g");r.style.display=(f==="all"||f===g)?"":"none";});});});
+each("#sb th[data-s]",function(th){var dir=-1;th.addEventListener("click",function(){
+  var i=+th.getAttribute("data-s"),tb=document.querySelector("#sb tbody");
+  var rows=Array.prototype.slice.call(tb.querySelectorAll("tr"));
+  rows.sort(function(a,b){var A=parseFloat(a.children[i].textContent.replace("−","-")),B=parseFloat(b.children[i].textContent.replace("−","-"));
+    if(isNaN(A)&&isNaN(B))return 0;if(isNaN(A))return 1;if(isNaN(B))return -1;return(A-B)*dir;});
+  dir=-dir;rows.forEach(function(r){tb.appendChild(r);});});});
 
 /* ---------- code tabs ---------- */
-document.querySelectorAll(".tab").forEach(function(t){
-  t.addEventListener("click",function(){
-    document.querySelectorAll(".tab").forEach(function(o){o.setAttribute("aria-selected",o===t?"true":"false");});
-    document.querySelectorAll(".tabpanel").forEach(function(p){p.hidden=(p.id!==t.getAttribute("data-t"));});
-  });
-});
+each(".tab",function(t){t.addEventListener("click",function(){
+  each(".tab",function(o){o.setAttribute("aria-selected",o===t?"true":"false");});
+  each(".tabpanel",function(p){p.hidden=(p.id!==t.getAttribute("data-t"));});});});
 
-/* ---------- chart data ---------- */
-var STEPS=[
- {x:6, human:4.416, face:4.782, sig:true},
- {x:8, human:4.427, face:4.790, sig:true},
- {x:12,human:4.380, face:4.774, sig:true},
- {x:16,human:4.418, face:4.790, sig:true},
- {x:20,human:4.266, face:4.694, sig:null},
- {x:28,human:4.376, face:4.742, sig:false},
- {x:40,human:4.329, face:4.710, sig:false}];
-var CFG=[{x:1.5,human:4.266,face:4.694},{x:2.0,human:4.335,face:4.750},
-         {x:3.0,human:4.289,face:4.710},{x:4.5,human:4.146,face:4.645}];
-var GATE=[[1,0.0000],[200,0.0043],[400,0.0091],[2400,0.0654],[2600,0.0737],[2800,0.0806]];
-var AXES=[{k:"face",gap:0.19,lbl:"face"},{k:"body",gap:0.61,lbl:"body"},
-          {k:"hands",gap:0.67,lbl:"hands"},{k:"realism",gap:0.80,lbl:"realism"}];
-var DIS=[{n:"grpo-500",fs:5.568,fid:92.13},{n:"soup-a0.5",fs:5.740,fid:96.35},
-         {n:"imgrw-vqa",fs:5.823,fid:97.72},{n:"soup-a0.7",fs:5.794,fid:97.81}];
+/* ================= charts (all values measured; see text) ================= */
+function frame(s,W,H,L,R,Tp,B,lo,hi,fmt,n){for(var g=0;g<=n;g++){var v=lo+(hi-lo)*g/n,y=Tp+(H-Tp-B)*(1-(v-lo)/(hi-lo));
+  s.appendChild(el("line",{x1:L,x2:W-R,y1:y,y2:y,class:"gl"}));s.appendChild(T(L-9,y+4,fmt(v),null,"end"));}}
 
-var stepMetric="human";
-document.querySelectorAll('.chip[data-m]').forEach(function(c){c.addEventListener("click",function(){
-  document.querySelectorAll('.chip[data-m]').forEach(function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
-  stepMetric=c.getAttribute("data-m"); drawSteps();
-});});
+function drawHack(){var s=$("hackchart");if(!s)return;s.innerHTML="";
+  var W=700,H=290,L=60,R=60,Tp=28,B=46,ac=cv("--accent"),a2=cv("--accent-2");
+  var X=[0,750,1500],GE=[0.7403,0.9224,0.9502],DP=[72.611,67.818,65.954];
+  var xs=function(i){return L+(W-L-R)*(X[i]/1500);};
+  var y1=function(v){return Tp+(H-Tp-B)*(1-(v-0.70)/(1.00-0.70));};
+  var y2=function(v){return Tp+(H-Tp-B)*(1-(v-64)/(74-64));};
+  for(var g=0;g<=5;g++){var y=Tp+(H-Tp-B)*g/5;s.appendChild(el("line",{x1:L,x2:W-R,y1:y,y2:y,class:"gl"}));
+    s.appendChild(T(L-9,y+4,(1.00-0.06*g).toFixed(2),null,"end"));s.appendChild(T(W-R+9,y+4,String(74-2*g),null,"start"));}
+  [[GE,y1,ac,"GenEval ↑"],[DP,y2,a2,"DPG-Bench"]].forEach(function(S){var d="";
+    S[0].forEach(function(v,i){d+=(i?" L":"M")+xs(i)+" "+S[1](v);});
+    s.appendChild(el("path",{d:d,fill:"none",stroke:S[2],"stroke-width":2.6,"stroke-linecap":"round","stroke-linejoin":"round"}));
+    S[0].forEach(function(v,i){s.appendChild(tip(el("circle",{cx:xs(i),cy:S[1](v),r:5.5,fill:S[2]}),S[3]+" at step "+X[i]+": "+v));
+      s.appendChild(T(xs(i)+(i===2?-10:10),S[1](v)+(S[3][0]==="G"?-11:18),(v<2?v.toFixed(3):v.toFixed(1)),null,i===2?"end":"start"));});});
+  X.forEach(function(x,i){s.appendChild(T(xs(i),H-B+20,String(x)));});
+  s.appendChild(T((L+W-R)/2,H-8,"RL steps","lbl"));
+  var t1=T(L,16,"GenEval (left axis)","lbl","start");t1.setAttribute("style","fill:"+ac);s.appendChild(t1);
+  var t2=T(W-R,16,"DPG-Bench (right axis)","lbl","end");t2.setAttribute("style","fill:"+a2);s.appendChild(t2);}
 
-/* ---------- step chart ---------- */
-function drawSteps(){
-  var s=document.getElementById("stepchart"); if(!s)return; s.innerHTML="";
-  var W=700,H=300,L=58,R=18,T=22,B=48, ac=cssv("--accent"), mu=cssv("--muted");
-  var vals=STEPS.map(function(d){return d[stepMetric];});
-  var lo=Math.min.apply(null,vals)-0.04, hi=Math.max.apply(null,vals)+0.04;
-  var xs=function(i){return L+(W-L-R)*(i/(STEPS.length-1));};
-  var ys=function(v){return T+(H-T-B)*(1-(v-lo)/(hi-lo));};
-  for(var g=0;g<=4;g++){var v=lo+(hi-lo)*g/4, y=ys(v);
-    s.appendChild(el("line",{x1:L,x2:W-R,y1:y,y2:y,class:"gl"}));
-    s.appendChild(txt(L-9,y+4,v.toFixed(2),null,"end"));}
-  var base=STEPS[4][stepMetric];
-  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(base),y2:ys(base),stroke:mu,
-    "stroke-width":1,"stroke-dasharray":"5 4","opacity":".75"}));
-  s.appendChild(txt(W-R-4,ys(base)-8,"20-step protocol",null,"end"));
-  var d="";
-  STEPS.forEach(function(p,i){d+=(i?" L":"M")+xs(i)+" "+ys(p[stepMetric]);});
-  s.appendChild(el("path",{d:d,fill:"none",stroke:ac,"stroke-width":2.2,
-    "stroke-linejoin":"round","stroke-linecap":"round"}));
-  STEPS.forEach(function(p,i){
-    var filled=p.sig===true;
-    var c=el("circle",{cx:xs(i),cy:ys(p[stepMetric]),r:filled?6:5,
-      fill:filled?ac:cssv("--paper"),stroke:ac,"stroke-width":2.2});
-    c.appendChild(el("title",{})).textContent=p.x+" steps — "+p[stepMetric].toFixed(3)+
-      (p.sig===true?" (significantly better than 20)":p.sig===false?" (not significant)":" (the protocol)");
-    s.appendChild(c);
-    s.appendChild(txt(xs(i),H-B+22,String(p.x)));
-  });
-  s.appendChild(txt((L+W-R)/2,H-8,"DPM-Solver++ steps","lbl"));
-  s.appendChild(txt(16,T+6,stepMetric==="human"?"HumanBench":"face axis","lbl","start"));
-}
+function drawLat(){var s=$("latchart");if(!s)return;s.innerHTML="";
+  var W=700,H=250,L=150,R=64,Tp=18,B=40,max=950;
+  var rows=[["512px",[["VLM encode",193.2,"--frozen-ink"],["diffusion, 20 steps",594.9,"--accent"],["decode",28.5,"--faint"]]],
+            ["1024 · head",[["VLM encode",193.2,"--frozen-ink"],["diffusion, 20 steps",594.9,"--accent"],["decoder head",86.2,"--accent-2"]]],
+            ["1024 · upsampler",[["VLM encode",193.2,"--frozen-ink"],["diffusion, 20 steps",594.9,"--accent"],["upsampler + decode",105.2,"--bad"]]]];
+  var bh=(H-Tp-B)/rows.length,sx=function(v){return (W-L-R)*v/max;};
+  [0,200,400,600,800].forEach(function(v){var x=L+sx(v);s.appendChild(el("line",{x1:x,x2:x,y1:Tp,y2:H-B,class:"gl"}));s.appendChild(T(x,H-B+16,v+"ms"));});
+  rows.forEach(function(r,i){var y=Tp+bh*i+bh*0.22,h=bh*0.56,x=L,tot=0;
+    s.appendChild(T(L-10,y+h/2+4,r[0],"lbl","end"));
+    r[1].forEach(function(seg){var w=sx(seg[1]);
+      s.appendChild(tip(el("rect",{x:x,y:y,width:Math.max(w,1.5),height:h,rx:3,style:"fill:var("+seg[2]+")",opacity:.88}),seg[0]+": "+seg[1]+" ms"));
+      if(w>70)s.appendChild(T(x+w/2,y+h/2+4,seg[0],null)).setAttribute("style","fill:#fff;font-size:10.5px");
+      x+=w;tot+=seg[1];});
+    s.appendChild(T(x+8,y+h/2+4,Math.round(tot)+" ms",null,"start"));});}
 
-/* ---------- guidance chart ---------- */
-function drawCfg(){
-  var s=document.getElementById("cfgchart"); if(!s)return; s.innerHTML="";
-  var W=700,H=270,L=58,R=18,T=22,B=48, ac=cssv("--accent"), bad=cssv("--bad");
-  var vals=CFG.map(function(d){return d.human;});
-  var lo=Math.min.apply(null,vals)-0.06, hi=Math.max.apply(null,vals)+0.06;
-  var bw=(W-L-R)/CFG.length;
-  for(var g=0;g<=4;g++){var v=lo+(hi-lo)*g/4,y=T+(H-T-B)*(1-(v-lo)/(hi-lo));
-    s.appendChild(el("line",{x1:L,x2:W-R,y1:y,y2:y,class:"gl"}));
-    s.appendChild(txt(L-9,y+4,v.toFixed(2),null,"end"));}
-  CFG.forEach(function(p,i){
-    var y=T+(H-T-B)*(1-(p.human-lo)/(hi-lo)), x=L+bw*i+bw*0.22, w=bw*0.56;
-    var r=el("rect",{x:x,y:y,width:w,height:(H-B)-y,rx:5,
-      fill:i===3?bad:ac,opacity:i===0?1:.82,class:"bar"});
-    r.appendChild(el("title",{})).textContent="cfg "+p.x+" — HumanBench "+p.human.toFixed(3);
-    s.appendChild(r);
-    s.appendChild(txt(x+w/2,y-8,p.human.toFixed(3)));
-    s.appendChild(txt(x+w/2,H-B+22,"cfg "+p.x.toFixed(1)));
-  });
-  s.appendChild(txt(L+bw*0+bw*0.5,H-8,"shipped","lbl"));
-  s.appendChild(txt(L+bw*2+bw*0.5,H-8,"best on GenEval / DPG / ImageReward","lbl"));
-  s.appendChild(txt(16,T+6,"HumanBench","lbl","start"));
-}
+function drawSteps(){var s=$("stepchart");if(!s)return;s.innerHTML="";
+  var W=700,H=290,L=60,R=18,Tp=38,B=46,ac=cv("--accent"),mu=cv("--muted");
+  var D=[[6,.103,.045,1],[8,.132,.044,1],[12,.100,.034,1],[16,.102,.036,1],[20,0,0,2],[28,.069,.036,0],[40,.022,.039,0]];
+  var lo=-.04,hi=.2,xs=function(i){return L+(W-L-R)*(i/(D.length-1));},ys=function(v){return Tp+(H-Tp-B)*(1-(v-lo)/(hi-lo));};
+  frame(s,W,H,L,R,Tp,B,lo,hi,function(v){return(v>=0?"+":"")+v.toFixed(2);},6);
+  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(0),y2:ys(0),stroke:mu,"stroke-width":1.2,"stroke-dasharray":"5 4"}));
+  var d="";D.forEach(function(p,i){d+=(i?" L":"M")+xs(i)+" "+ys(p[1]);});
+  s.appendChild(el("path",{d:d,fill:"none",stroke:ac,"stroke-width":2.2,opacity:.45}));
+  D.forEach(function(p,i){var x=xs(i);
+    if(p[2])s.appendChild(el("line",{x1:x,x2:x,y1:ys(p[1]-p[2]),y2:ys(p[1]+p[2]),stroke:ac,"stroke-width":2,opacity:.6}));
+    var c=el("circle",{cx:x,cy:ys(p[1]),r:p[3]===2?4.5:6,fill:p[3]===1?ac:cv("--card"),stroke:p[3]===2?mu:ac,"stroke-width":2.2});
+    s.appendChild(tip(c,p[0]+" steps: "+(p[3]===2?"the 20-step protocol":((p[1]>=0?"+":"")+p[1].toFixed(3)+" ± "+p[2].toFixed(3)+(p[3]?" (significant)":" (not significant)")))));
+    s.appendChild(T(x,H-B+20,String(p[0])));});
+  s.appendChild(T((L+W-R)/2,H-8,"DPM-Solver++ steps","lbl"));
+  s.appendChild(T(14,14,"paired HumanBench gain vs. 20 steps","lbl","start"));}
 
-/* ---------- axis gap chart ---------- */
-function drawAxes(){
-  var s=document.getElementById("axischart"); if(!s)return; s.innerHTML="";
-  var W=700,H=250,L=92,R=70,T=18,B=40, ac=cssv("--accent"), good=cssv("--good");
-  var max=0.9, bh=(H-T-B)/AXES.length;
-  AXES.forEach(function(a,i){
-    var y=T+bh*i+bh*0.2, h=bh*0.6, w=(W-L-R)*(a.gap/max);
-    var r=el("rect",{x:L,y:y,width:w,height:h,rx:5,fill:i===0?good:ac,opacity:i===0?.9:.85});
-    r.appendChild(el("title",{})).textContent=a.lbl+" — "+a.gap.toFixed(2)+" below real photographs";
-    s.appendChild(r);
-    s.appendChild(txt(L-10,y+h/2+4,a.lbl,"lbl","end"));
-    s.appendChild(txt(L+w+9,y+h/2+4,"−"+a.gap.toFixed(2),null,"start"));
-  });
-  s.appendChild(txt(L+(W-L-R)/2,H-8,"gap below the real-photograph ceiling  (1–5 scale)","lbl"));
-}
+function drawCfg(){var s=$("cfgchart");if(!s)return;s.innerHTML="";
+  var W=700,H=280,L=60,R=18,Tp=40,B=50,ac=cv("--accent"),a2=cv("--accent-2"),mu=cv("--muted");
+  var D=[["1.5",0,0,2],["2.0",.038,.042,0],["3.0",-.041,.047,0],["4.5 +ivl",-.171,.051,1]];
+  var lo=-.24,hi=.12,bw=(W-L-R)/D.length,ys=function(v){return Tp+(H-Tp-B)*(1-(v-lo)/(hi-lo));};
+  frame(s,W,H,L,R,Tp,B,lo,hi,function(v){return Math.abs(v)<1e-9?"0.00":(v>0?"+":"")+v.toFixed(2);},6);
+  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(0),y2:ys(0),stroke:mu,"stroke-width":1.3}));
+  function bar(cx,w,v,e,col,sig,label){var y=ys(Math.max(0,v)),h=Math.abs(ys(v)-ys(0));
+    s.appendChild(tip(el("rect",{x:cx-w/2,y:y,width:w,height:Math.max(h,1.5),rx:4,fill:col,opacity:sig?.92:.32}),label));
+    if(e)s.appendChild(el("line",{x1:cx,x2:cx,y1:ys(v-e),y2:ys(v+e),stroke:mu,"stroke-width":1.5}));}
+  D.forEach(function(p,i){var cx=L+bw*i+bw*0.5;
+    if(p[3]===2){s.appendChild(tip(el("circle",{cx:cx,cy:ys(0),r:5,fill:cv("--card"),stroke:mu,"stroke-width":2}),"cfg 1.5: the reference"));
+      s.appendChild(T(cx,ys(0)-11,"reference",null));}
+    else bar(p[0]==="3.0"?cx-13:cx,22,p[1],p[2],ac,p[3],"RL model, cfg "+p[0]+": "+(p[1]>=0?"+":"")+p[1].toFixed(3)+" ± "+p[2].toFixed(3)+(p[3]?" (significant)":" (not significant)"));
+    s.appendChild(T(cx,H-B+20,"cfg "+p[0]));});
+  bar(L+bw*2+bw*0.5+13,22,-.165,.047,a2,1,"merged model, cfg 3.0 vs 1.5: −0.165 ± 0.047 (significant, t = −3.48)");
+  function key(x,col,op,txt){s.appendChild(el("rect",{x:x,y:12,width:12,height:12,rx:3,fill:col,opacity:op}));
+    var t=T(x+18,22,txt,"lbl","start");s.appendChild(t);}
+  key(L,ac,.92,"RL model");key(L+106,a2,.92,"merged model");key(L+246,mu,.92,"solid = significant");key(L+404,mu,.32,"pale = not significant");
+  s.appendChild(T((L+W-R)/2,H-8,"guidance scale  ·  paired HumanBench change vs. cfg 1.5","lbl"));}
 
-/* ---------- disagreement chart ---------- */
-function drawDisagree(){
-  var s=document.getElementById("disagreechart"); if(!s)return; s.innerHTML="";
-  var W=700,H=320,T=44,B=46, ac=cssv("--accent"), bad=cssv("--bad"), mu=cssv("--muted");
-  var midL=40,midR=W-40, half=(midR-midL)/2, gap=64;
-  var fsMin=5.5,fsMax=5.88, fidMin=90,fidMax=99;
-  var yL=function(v){return T+(H-T-B)*(1-(v-fsMin)/(fsMax-fsMin));};
-  var yR=function(v){return T+(H-T-B)*((v-fidMin)/(fidMax-fidMin));};
-  s.appendChild(txt(midL+half/2-gap/2,26,"FaceScore  (higher = better)","lbl"));
-  s.appendChild(txt(midR-half/2+gap/2,26,"face-region FID  (lower = better)","lbl"));
-  var xa=midL+60, xb=midR-60;
-  DIS.forEach(function(d,i){
-    var c=(d.n==="grpo-500")?bad:ac;
-    var y1=yL(d.fs), y2=yR(d.fid);
-    s.appendChild(el("line",{x1:xa,x2:xb,y1:y1,y2:y2,stroke:c,"stroke-width":2,opacity:.55}));
-    var c1=el("circle",{cx:xa,cy:y1,r:6,fill:c});
-    c1.appendChild(el("title",{})).textContent=d.n+" — FaceScore "+d.fs;
-    s.appendChild(c1);
-    var c2=el("circle",{cx:xb,cy:y2,r:6,fill:c});
-    c2.appendChild(el("title",{})).textContent=d.n+" — face-FID "+d.fid;
-    s.appendChild(c2);
-    s.appendChild(txt(xa-12,y1+4,d.fs.toFixed(3),null,"end"));
-    s.appendChild(txt(xb+12,y2+4,d.fid.toFixed(2),null,"start"));
-    s.appendChild(txt((xa+xb)/2,(y1+y2)/2-7,d.n,null,"middle"));
-  });
-  s.appendChild(txt(W/2,H-10,"each line is one checkpoint — crossing lines mean the metrics disagree","lbl"));
-}
+function drawAxes(){var s=$("axischart");if(!s)return;s.innerHTML="";
+  var W=700,H=230,L=84,R=78,Tp=14,B=34,ac=cv("--accent"),good=cv("--good");
+  var A=[["face",.191],["body",.241],["hands",.758],["realism",.800]],max=.9,bh=(H-Tp-B)/A.length;
+  A.forEach(function(a,i){var y=Tp+bh*i+bh*.2,h=bh*.6,w=(W-L-R)*(a[1]/max);
+    s.appendChild(tip(el("rect",{x:L,y:y,width:w,height:h,rx:5,fill:i<2?good:ac,opacity:.85}),a[0]+": "+a[1].toFixed(3)+" below real"));
+    s.appendChild(T(L-10,y+h/2+4,a[0],"lbl","end"));s.appendChild(T(L+w+9,y+h/2+4,"−"+a[1].toFixed(2),null,"start"));});
+  s.appendChild(T(L+(W-L-R)/2,H-6,"gap below the real-photograph ceiling (1–5 scale)","lbl"));}
 
-/* ---------- gate chart ---------- */
-function drawGate(){
-  var s=document.getElementById("gatechart"); if(!s)return; s.innerHTML="";
-  var W=700,H=250,L=62,R=22,T=22,B=44, ac=cssv("--accent"), mu=cssv("--muted");
-  var hi=0.09;
-  var xs=function(b){return L+(W-L-R)*(b/2900);};
-  var ys=function(v){return T+(H-T-B)*(1-v/hi);};
-  for(var g=0;g<=3;g++){var v=hi*g/3,y=ys(v);
-    s.appendChild(el("line",{x1:L,x2:W-R,y1:y,y2:y,class:"gl"}));
-    s.appendChild(txt(L-9,y+4,v.toFixed(3),null,"end"));}
-  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(0),y2:ys(0),stroke:mu,"stroke-width":1.4,
-    "stroke-dasharray":"5 4"}));
-  s.appendChild(txt(L+6,ys(0)-9,"dead channel — where the broken run stayed for 487 steps",null,"start"));
-  var d="";
-  GATE.forEach(function(p,i){d+=(i?" L":"M")+xs(p[0])+" "+ys(p[1]);});
-  s.appendChild(el("path",{d:d,fill:"none",stroke:ac,"stroke-width":2.4,
-    "stroke-linejoin":"round","stroke-linecap":"round"}));
-  GATE.forEach(function(p){
-    var c=el("circle",{cx:xs(p[0]),cy:ys(p[1]),r:5,fill:ac});
-    c.appendChild(el("title",{})).textContent="batch "+p[0]+" — tanh(gate) "+p[1].toFixed(4);
-    s.appendChild(c);
-  });
-  [0,1000,2000,2900].forEach(function(b){s.appendChild(txt(xs(b),H-B+22,String(b)));});
-  s.appendChild(txt((L+W-R)/2,H-8,"training batch","lbl"));
-  s.appendChild(txt(16,T+6,"tanh(gate)","lbl","start"));
-}
+function drawDis(){var s=$("disagreechart");if(!s)return;s.innerHTML="";
+  var W=700,H=320,Tp=58,B=48,ac=cv("--accent"),a2=cv("--accent-2");
+  var M=[["RL model",5.568,92.13,a2],["merge 50/50",5.740,96.35,ac],["merge IR+VQA",5.823,97.72,ac],["merge 30/70",5.794,97.81,ac]];
+  var xa=130,xb=440;
+  var yl=function(v){return Tp+(H-Tp-B)*(1-(v-5.5)/(5.88-5.5));},yr=function(v){return Tp+(H-Tp-B)*((v-90)/(99-90));};
+  s.appendChild(el("line",{x1:xa,x2:xa,y1:Tp-10,y2:H-B+8,class:"ax"}));s.appendChild(el("line",{x1:xb,x2:xb,y1:Tp-10,y2:H-B+8,class:"ax"}));
+  s.appendChild(T(xa,22,"FaceScore  ↑","lbl"));s.appendChild(T(xb,22,"face-region FID  ↓","lbl"));
+  s.appendChild(T(xa,38,"higher is better",null));s.appendChild(T(xb,38,"lower is better, drawn higher",null));
+  function dodge(arr){arr.sort(function(a,b){return a.y-b.y;});for(var i=1;i<arr.length;i++)if(arr[i].y<arr[i-1].y+15)arr[i].y=arr[i-1].y+15;return arr;}
+  var Lb=[],Rb=[];
+  M.forEach(function(m){var a=yl(m[1]),b=yr(m[2]);
+    s.appendChild(el("line",{x1:xa,x2:xb,y1:a,y2:b,stroke:m[3],"stroke-width":2.2,opacity:.55}));
+    s.appendChild(tip(el("circle",{cx:xa,cy:a,r:6,fill:m[3]}),m[0]+": FaceScore "+m[1]));
+    s.appendChild(tip(el("circle",{cx:xb,cy:b,r:6,fill:m[3]}),m[0]+": face-FID "+m[2]));
+    Lb.push({y:a,t:m[1].toFixed(2)});Rb.push({y:b,t:m[2].toFixed(1)+"  "+m[0],c:m[3]});});
+  dodge(Lb).forEach(function(l){s.appendChild(T(xa-12,l.y+4,l.t,null,"end"));});
+  dodge(Rb).forEach(function(r){s.appendChild(T(xb+12,r.y+4,r.t,null,"start"));});
+  s.appendChild(T(W/2,H-12,"crossing lines = the two metrics rank the models in opposite orders","lbl"));}
 
-function drawAll(){drawSteps();drawCfg();drawAxes();drawDisagree();drawGate();}
+function drawGate(){var s=$("gatechart");if(!s)return;s.innerHTML="";
+  var W=700,H=260,L=64,R=22,Tp=36,B=46,ac=cv("--accent"),mu=cv("--muted");
+  var G=[[1,0],[201,.0045],[401,.0098],[601,.0121],[801,.0140],[1001,.0167],[1201,.0178],[1401,.0215],[1601,.0271],[1801,.0342],
+         [2001,.0354],[2201,.0383],[2401,.0413],[2601,.0457],[2801,.0500],[3001,.0530],[3201,.0566],[3401,.0654],[3601,.0737],[3801,.0806],[4001,.0884]];
+  var mx=4200,hi=.1,xs=function(b){return L+(W-L-R)*(b/mx);},ys=function(v){return Tp+(H-Tp-B)*(1-v/hi);};
+  frame(s,W,H,L,R,Tp,B,0,hi,function(v){return v.toFixed(3);},4);
+  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(0),y2:ys(0),stroke:cv("--bad"),"stroke-width":1.4,"stroke-dasharray":"5 4"}));
+  s.appendChild(T(W-R-6,ys(0)-8,"a dead channel stays flat on this line",null,"end"));
+  var area="M"+xs(G[0][0])+" "+ys(0);G.forEach(function(p){area+=" L"+xs(p[0])+" "+ys(p[1]);});area+=" L"+xs(G[G.length-1][0])+" "+ys(0)+" Z";
+  s.appendChild(el("path",{d:area,fill:ac,opacity:.1}));
+  var d="";G.forEach(function(p,i){d+=(i?" L":"M")+xs(p[0])+" "+ys(p[1]);});
+  s.appendChild(el("path",{d:d,fill:"none",stroke:ac,"stroke-width":2.4,"stroke-linejoin":"round"}));
+  G.forEach(function(p){s.appendChild(tip(el("circle",{cx:xs(p[0]),cy:ys(p[1]),r:3.4,fill:ac}),"batch "+p[0]+": tanh(gate) = "+p[1].toFixed(4)));});
+  [0,1000,2000,3000,4000].forEach(function(b){s.appendChild(T(xs(b),H-B+20,String(b)));});
+  s.appendChild(T((L+W-R)/2,H-8,"training batch","lbl"));s.appendChild(T(14,14,"tanh(gate)","lbl","start"));}
+
+function drawAll(){drawHack();drawLat();drawSteps();drawCfg();drawAxes();drawDis();drawGate();}
 drawAll();
-matchMedia("(prefers-color-scheme:dark)").addEventListener("change",drawAll);
-addEventListener("resize",function(){clearTimeout(window.__rt);window.__rt=setTimeout(drawAll,150);});
+try{matchMedia("(prefers-color-scheme:dark)").addEventListener("change",drawAll);}catch(e){}
 })();
 </script>
 </body>
