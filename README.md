@@ -52,16 +52,21 @@ those features straight to 1024px RGB, anchored on a bicubic x2 of the ordinary 
 VAE is frozen too -- only the head is learned.
 
 That is deliberate: the DiT is a latency budget, not a resolution choice. Going to a 32x32 latent
-would quadruple the transformer cost; this costs almost nothing.
+would quadruple the transformer cost; this adds one decoder-side head.
 
-| batch of 8, one RTX PRO 6000 | ms/image |
+| one image, batch 1, 20 steps, one RTX PRO 6000 | ms |
 |---|---|
-| 512px | 459 |
-| 1024px | 462 |
+| VLM + connector encode | 193 |
+| diffusion, 20 steps | 595 |
+| decode to 512px | 29 |
+| **end-to-end, 512px** | **817** |
+| **end-to-end, 1024px** (head replaces the decode, 86 ms) | **874** |
 
-**+3 ms/image, 0.7%.** Verified equivalent: rendering the same prompt and seed at both sizes and
-downscaling the 1024 result back to 512 gives a mean difference of 1.0/255 against the native 512px
-output -- the same picture, decoded better.
+**+58 ms, +7.1% end-to-end, for four times the pixels** (median of 30 runs after 5 warm-up). Verified
+equivalent: rendering the same prompt and seed at both sizes and downscaling the 1024 result back to
+512 gives a mean difference of 1.0/255 against the native 512px output -- the same picture, decoded
+better. On nine benchmarks the head is content-neutral (GenEval, DPG and ImgEdit unchanged) and
+improves FID by 0.48.
 
 The head shipped here is `c100`, selected on a reconstruction eval against the alternative approach
 (a SwinIR upsampler taking the latent 16x16 -> 32x32 *before* the frozen decode): FID 1.76 vs 2.077
