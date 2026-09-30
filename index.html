@@ -2,1224 +2,996 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mobile-O v2</title>
-<meta name="description" content="A 0.5B-class text-to-image and image-editing model built to a phone latency budget: architecture, multi-task GRPO, a 1024px decoder head, and full benchmark results.">
+<meta name="description" content="Mobile-O v2 is a small model for generating and editing images, built with phones in mind. How it works, how it compares with Mobile-O v1, and how we trained it.">
+<meta property="og:title" content="Mobile-O v2: A Small Model for Generating and Editing Images">
+<meta property="og:description" content="How Mobile-O v2 works, how it compares with Mobile-O v1, and how we trained it.">
+<meta property="og:type" content="article">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Charis+SIL:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
 <style>
+/* Layout: one 660px serif reading column, numbered notes in the right margin on wide screens,
+   a sticky contents list in the left margin, and interactive figures on quiet gray panels. */
 :root{
-  --paper:#fbfaf7;--ink:#17171a;--muted:#5b5b66;--faint:#8b8b96;--rule:#e5e2db;--card:#fff;
-  --accent:#c2410c;--accent-2:#0f766e;--accent-soft:#fdf0e6;--teal-soft:#e6f4f1;
-  --frozen:#eef0f3;--frozen-ink:#4b5563;--good:#15803d;--bad:#b91c1c;--grid:#efece5;
-  --shadow:0 1px 2px rgba(20,20,30,.04),0 8px 24px rgba(20,20,30,.06);
-  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
-  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --serif:'Newsreader',Georgia,serif;
+  --bg:#ffffff; --fg:#262523; --fg-2:#4b4845; --muted:#6c6864; --faint:#8f8b86;
+  --rule:#e5e2dd; --grid:#edebe7; --panel:#f6f5f2; --code:#f3f2ef; --hover:#efede9;
+  --link-line:rgba(38,37,35,.3); --us:rgba(42,120,214,.07);
+  --s1:#2a78d6; --n1:#b8b4ad; --n2:#dcd8d1; --n3:#8f8b86;
+  --serif:'Iowan Old Style','Charis SIL',Charter,'Bitstream Charter',Georgia,serif;
+  --sans:'Source Sans 3',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --col:660px; --sn:240px; --sn-gap:44px; --toc:180px;
 }
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --paper:#0e0e10;--ink:#ebeae6;--muted:#a1a1ac;--faint:#6f6f7a;--rule:#27272d;--card:#16161a;
-  --accent:#f59e5b;--accent-2:#5eead4;--accent-soft:#2b1b0e;--teal-soft:#0c2926;
-  --frozen:#1d1f24;--frozen-ink:#a3a9b5;--good:#4ade80;--bad:#f87171;--grid:#202026;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
-}}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#151514; --fg:#e8e6e1; --fg-2:#cfcbc4; --muted:#a39f98; --faint:#86827c;
+    --rule:#2f2e2b; --grid:#262523; --panel:#1c1c1a; --code:#201f1d; --hover:#252422;
+    --link-line:rgba(232,230,225,.32); --us:rgba(57,135,229,.12);
+    --s1:#3987e5; --n1:#6e6b66; --n2:#3c3a37; --n3:#8a867f;
+    color-scheme:dark;
+  }
+}
 :root[data-theme="dark"]{
-  --paper:#0e0e10;--ink:#ebeae6;--muted:#a1a1ac;--faint:#6f6f7a;--rule:#27272d;--card:#16161a;
-  --accent:#f59e5b;--accent-2:#5eead4;--accent-soft:#2b1b0e;--teal-soft:#0c2926;
-  --frozen:#1d1f24;--frozen-ink:#a3a9b5;--good:#4ade80;--bad:#f87171;--grid:#202026;
-  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
+  --bg:#151514; --fg:#e8e6e1; --fg-2:#cfcbc4; --muted:#a39f98; --faint:#86827c;
+  --rule:#2f2e2b; --grid:#262523; --panel:#1c1c1a; --code:#201f1d; --hover:#252422;
+  --link-line:rgba(232,230,225,.32); --us:rgba(57,135,229,.12);
+  --s1:#3987e5; --n1:#6e6b66; --n2:#3c3a37; --n3:#8a867f;
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
-html{scroll-behavior:smooth;scroll-padding-top:72px}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
-  font-size:17px;line-height:1.72;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-.wrap{max-width:760px;margin:0 auto;padding:0 16px}
-.wide{max-width:1080px;margin:0 auto;padding:0 16px}
-img{max-width:100%;display:block}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--serif);font-size:17px;line-height:1.62;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
+img{max-width:100%}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--s1);outline-offset:2px}
 
-nav.top{position:sticky;top:0;z-index:60;background:color-mix(in srgb,var(--paper) 86%,transparent);
-  backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);
-  border-bottom:1px solid var(--rule)}
-nav.top .wide{display:flex;align-items:center;gap:18px;height:56px}
-nav.top .brand{font-weight:650;letter-spacing:-.015em;font-size:15px}
-nav.top .brand i{font-style:normal;color:var(--accent)}
-nav.top a.nl{color:var(--muted);text-decoration:none;font-size:14px;border:0}
-nav.top a.nl:hover{color:var(--accent)}
-nav.top .sp{flex:1}
-@media(max-width:720px){nav.top a.nl{display:none}}
-.progress{position:absolute;left:0;bottom:-1px;height:2px;background:var(--accent);width:0;transition:width .1s}
-.tbtn{background:none;border:1px solid var(--rule);border-radius:8px;color:var(--muted);
-  cursor:pointer;font-size:14px;padding:5px 11px;font-family:var(--sans)}
-.tbtn:hover{border-color:var(--accent);color:var(--accent)}
+/* ---------- site header ---------- */
+.site{border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.site .in{max-width:1100px;margin:0 auto;padding-inline:16px;height:52px;display:flex;align-items:center;gap:20px}
+.site .mark{font-family:var(--serif);font-weight:700;font-size:17px;color:var(--fg);text-decoration:none}
+.site nav{display:flex;gap:18px;margin-left:auto;font-size:15px}
+.site nav a{color:var(--fg-2);text-decoration:none}
+.site nav a:hover{color:var(--fg);text-decoration:underline;text-underline-offset:3px}
+.theme{border:1px solid var(--rule);background:none;border-radius:6px;padding:3px 9px;font-size:13px;color:var(--fg-2);cursor:pointer;font-family:var(--sans)}
+.theme:hover{color:var(--fg);border-color:var(--n1)}
 
-header.hero{padding:70px 0 20px}
-.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}
-h1{font-family:var(--serif);font-size:clamp(38px,6.4vw,60px);line-height:1.06;letter-spacing:-.025em;font-weight:500;margin:0 0 22px}
-h1 em{font-style:italic;color:var(--accent)}
-.standfirst{font-size:20.5px;line-height:1.58;color:var(--muted);margin:0 0 28px}
-.byline{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13.5px;color:var(--faint);border-top:1px solid var(--rule);padding-top:16px}
-.byline b{color:var(--muted);font-weight:500}
-.links{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0 0}
-.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;font-size:14px;
-  font-weight:500;text-decoration:none;border:1px solid var(--rule);color:var(--ink);background:var(--card)}
-.btn:hover{border-color:var(--accent);color:var(--accent)}
-.btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
-.btn.primary:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+main{padding-inline:16px;padding-block:0}
 
-h2{font-family:var(--serif);font-size:32px;font-weight:500;letter-spacing:-.018em;margin:74px 0 8px;line-height:1.2}
-h2 .num{font-family:var(--mono);font-size:12.5px;color:var(--accent);display:block;margin-bottom:10px;letter-spacing:.12em}
-h3{font-size:19.5px;font-weight:620;margin:40px 0 8px;letter-spacing:-.012em}
-p{margin:0 0 18px}
-a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent) 32%,transparent)}
-a:hover{border-bottom-color:var(--accent)}
-strong,b{font-weight:620}
-code{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);padding:1.5px 5px;border-radius:4px;color:var(--accent)}
-.lead{font-size:18.5px;color:var(--muted)}
+/* ---------- post heading and cover ---------- */
+.post-head{max-width:760px;margin:0 auto;padding-block:52px 0;text-align:center}
+.post-head h1{font-family:var(--serif);font-weight:700;font-size:clamp(28px,4.3vw,38px);line-height:1.22;letter-spacing:-.005em;margin:0 auto;max-width:700px;text-wrap:balance}
+.meta{font-family:var(--sans);font-size:15px;color:var(--muted);margin-top:14px}
+.cover{max-width:980px;margin:36px auto 0}
+.cover .row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.cover picture{display:block}
+.cover img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:6px;background:var(--n2)}
+.cover p{font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--muted);text-align:center;margin:12px auto 0;max-width:660px}
+@media (max-width:640px){.cover .row{grid-template-columns:repeat(2,1fr)}}
 
-.tldr{background:var(--card);border:1px solid var(--rule);border-radius:16px;padding:26px 28px;margin:34px 0;box-shadow:var(--shadow)}
-.tldr h4{margin:0 0 14px;font-family:var(--mono);font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent)}
-.tldr ul{margin:0;padding-left:20px}
-.tldr li{margin-bottom:10px}
-.tldr li:last-child{margin-bottom:0}
+/* ---------- three-column shell: contents | article | notes ---------- */
+.shell{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,var(--col)) minmax(0,1fr);align-items:start;margin-top:36px}
+article{grid-column:2;min-width:0;counter-reset:sn fig}
+.toc{grid-column:1;grid-row:1;justify-self:end;position:sticky;top:28px;width:var(--toc);margin-right:52px;font-family:var(--sans);font-size:14px;line-height:1.35;display:none;max-height:calc(100vh - 56px);overflow:auto;scrollbar-width:none}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc li{margin:0 0 9px}
+.toc a{color:var(--faint);text-decoration:none;transition:color .15s}
+.toc a:hover{color:var(--fg-2)}
+.toc a[aria-current="true"]{color:var(--fg)}
+@media (min-width:1280px){.toc{display:block}.inline-toc{display:none}}
 
-.toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 26px;margin:30px 0;padding:18px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
-.toc a{display:flex;gap:12px;color:var(--muted);border:0;padding:5px 0;font-size:15px}
-.toc a:hover{color:var(--accent)}
-.toc a span{font-family:var(--mono);font-size:12px;color:var(--faint);padding-top:3px}
+/* ---------- running text ---------- */
+article p{margin:0 0 1.15em}
+article h2{font-family:var(--serif);font-weight:700;font-size:1.55rem;line-height:1.28;margin:2.4em 0 .7em;text-wrap:balance;scroll-margin-top:20px}
+article h3{font-family:var(--serif);font-weight:400;font-style:italic;font-size:1.28rem;line-height:1.35;margin:1.9em 0 .55em;text-wrap:balance;scroll-margin-top:20px}
+article a{color:inherit;text-decoration:underline;text-decoration-color:var(--link-line);text-decoration-thickness:1px;text-underline-offset:2px}
+article a:hover{text-decoration-color:currentColor}
+article ul,article ol{padding-left:1.3em;margin:0 0 1.15em}
+article li{margin:0 0 .45em}
+article li::marker{color:var(--faint)}
+b,strong{font-weight:700}
+code{font-family:var(--mono);font-size:.82em;background:var(--code);padding:.12em .36em;border-radius:4px}
+.inline-toc{font-family:var(--sans);font-size:15px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:14px 0 6px;margin:1.6em 0}
+.inline-toc p{margin:0 0 6px;color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+.inline-toc ol{columns:2;column-gap:28px;margin:0;padding-left:1.2em}
+.inline-toc li{margin:0 0 6px;break-inside:avoid}
+@media (max-width:480px){.inline-toc ol{columns:1}}
 
-figure{margin:36px 0}
-figcaption{font-size:14px;color:var(--muted);margin-top:13px;line-height:1.58}
-figcaption b{color:var(--ink)}
+/* ---------- margin notes (collapsed into the text on narrow screens) ---------- */
+.sn-ref{counter-increment:sn;cursor:pointer}
+.sn-ref::after{content:counter(sn);font-family:var(--sans);font-size:.7em;font-weight:600;vertical-align:super;line-height:0;color:var(--s1);margin-left:1px;padding:0 1px}
+.sn-toggle{display:none}
+.sidenote{display:none;font-family:var(--sans);font-size:14px;line-height:1.45;color:var(--muted)}
+.sidenote::before{content:counter(sn) "  ";font-weight:600;color:var(--fg-2)}
+.sidenote a{color:var(--fg-2)}
+.sn-toggle:checked + .sidenote{display:block;margin:.5em 0 .9em;padding:10px 14px;background:var(--panel);border-radius:6px}
+@media (min-width:1280px){
+  .sn-ref{cursor:default}
+  .sidenote,.sn-toggle:checked + .sidenote{display:block;float:right;clear:right;width:var(--sn);margin:.2em calc(-1 * var(--sn) - var(--sn-gap)) 1em 0;padding:0;background:none;position:relative}
+}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:var(--rule);
-  border:1px solid var(--rule);border-radius:16px;overflow:hidden;margin:32px 0}
-.stat{background:var(--card);padding:19px 18px}
-.stat .v{font-family:var(--mono);font-size:27px;font-weight:500;letter-spacing:-.025em;color:var(--accent);line-height:1.15}
-.stat .v small{font-size:14px;color:var(--muted)}
-.stat .k{font-size:12.8px;color:var(--muted);margin-top:5px;line-height:1.42}
+/* ---------- figures ---------- */
+figure{margin:2.1em 0;counter-increment:fig}
+figcaption{font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--muted);margin-top:12px}
+figcaption::before{content:"Figure " counter(fig) ": ";font-weight:600;color:var(--fg-2)}
+figcaption a{color:var(--fg-2)}
+.panel{background:var(--panel);border-radius:10px;padding:18px}
+@media (max-width:520px){.panel{padding:12px;border-radius:8px}}
+.ctl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-family:var(--sans);font-size:13.5px;color:var(--muted)}
+.ctl + .ctl{margin-top:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--sans);font-size:13.5px;line-height:1.3;border:1px solid var(--rule);background:var(--bg);color:var(--fg-2);border-radius:999px;padding:4px 12px;cursor:pointer}
+.chip:hover{border-color:var(--n1);color:var(--fg)}
+.chip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+.swipe{display:none;font-family:var(--sans);font-size:12.5px;color:var(--faint);margin:0 0 6px;text-align:right}
+@media (max-width:640px){.swipe{display:block}}
+.note-line{font-family:var(--sans);font-size:14px;color:var(--fg-2);margin:12px 0 0;line-height:1.5;text-align:center}
 
-table{width:100%;border-collapse:collapse;font-size:14.5px}
-th{text-align:right;font-weight:600;padding:10px 10px;border-bottom:1.5px solid var(--rule);font-size:11.8px;
-  letter-spacing:.04em;text-transform:uppercase;color:var(--muted);white-space:nowrap;vertical-align:bottom}
-th .t{display:block;font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint);font-size:11.5px;margin-top:2px}
-th:first-child,td:first-child{text-align:left}
-td{padding:10px;border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums;text-align:right;font-family:var(--mono);font-size:13.5px;white-space:nowrap}
-td:first-child{font-family:var(--sans);font-size:14.5px;white-space:normal}
-tbody tr:hover td{background:color-mix(in srgb,var(--accent) 5%,transparent)}
-tr.hl td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
-.hit{color:var(--good);font-weight:600}
-.dim{color:var(--faint)}
-.tbl{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:22px 0;border:1px solid var(--rule);border-radius:14px;background:var(--card)}
-.tbl table{min-width:640px}
-th[data-s]{cursor:pointer;user-select:none}
-th[data-s]:hover{color:var(--accent)}
+/* results teaser table */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.teaser{width:100%;min-width:600px;border-collapse:separate;border-spacing:0;font-family:var(--sans)}
+.teaser th,.teaser td{padding:12px 6px;text-align:center;border-bottom:1px solid var(--rule);vertical-align:middle}
+.teaser thead th{font-size:14px;font-weight:600;color:var(--fg);line-height:1.25;vertical-align:bottom;padding-top:14px}
+.teaser thead th small{display:block;font-weight:400;font-size:12.5px;color:var(--muted);margin-top:2px}
+.teaser tbody th{text-align:left;font-weight:600;font-size:15px;color:var(--fg);padding-left:0;min-width:150px}
+.teaser tbody th small{display:block;font-weight:400;font-size:13px;color:var(--muted);margin-top:1px}
+.teaser td{font-family:var(--serif);font-size:19px;color:var(--fg-2);font-variant-numeric:tabular-nums}
+.teaser td.na{color:var(--faint);font-size:17px}
+.teaser .us{background:var(--us);border-left:2px solid var(--s1);border-right:2px solid var(--s1);color:var(--fg);font-weight:700}
+.teaser thead .us{border-top:2px solid var(--s1);border-radius:10px 10px 0 0}
+.teaser tbody tr:last-child .us{border-bottom:2px solid var(--s1);border-radius:0 0 10px 10px}
+.teaser tbody tr:last-child th,.teaser tbody tr:last-child td{border-bottom:0}
 
-.ctrls{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 6px}
-.chip{border:1px solid var(--rule);background:var(--card);color:var(--muted);border-radius:22px;padding:6px 15px;
-  font-size:13.5px;cursor:pointer;font-family:var(--sans);transition:all .15s}
-.chip:hover{border-color:var(--accent);color:var(--accent)}
-.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+/* plain tables */
+table.plain{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:14.5px;line-height:1.4;font-variant-numeric:tabular-nums}
+.plain th{font-weight:400;color:var(--muted);text-align:right;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:bottom}
+.plain td{padding:9px 10px;border-bottom:1px solid var(--grid);text-align:right}
+.plain th:first-child,.plain td:first-child{text-align:left}
+.plain td.us{font-weight:600;color:var(--fg)}
+.plain th small{display:block;font-size:12px;color:var(--faint)}
 
-.note{border-left:3px solid var(--accent);background:var(--accent-soft);padding:17px 21px;border-radius:0 12px 12px 0;margin:28px 0;font-size:15.6px}
-.note.teal{border-left-color:var(--accent-2);background:var(--teal-soft)}
-.note p:last-child{margin-bottom:0}
-.note .lbl{font-family:var(--mono);font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:7px}
-.note.teal .lbl{color:var(--accent-2)}
+/* v1 against v2, best of four */
+.vs{display:grid;grid-template-columns:34px repeat(3,1fr);gap:8px;align-items:center}
+.vs + .vs{margin-top:18px}
+.vs .h{font-family:var(--sans);font-size:13px;color:var(--fg-2);font-weight:600;line-height:1.25;align-self:end}
+.vs .r{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--fg-2);justify-self:start}
+.vs button{padding:0;border:0;background:var(--n2);border-radius:6px;overflow:hidden;cursor:zoom-in;aspect-ratio:1;display:block}
+.vs button img{display:block;width:100%;height:100%;object-fit:cover}
 
-pre{background:var(--card);border:1px solid var(--rule);border-radius:0 12px 12px 12px;padding:17px 19px;overflow-x:auto;
-  font-family:var(--mono);font-size:13px;line-height:1.68;margin:0}
-pre code{background:none;padding:0;color:var(--ink);font-size:13px}
-pre .c{color:var(--faint)}
-.tabs{display:flex;gap:4px;flex-wrap:wrap}
-.tab{border:1px solid var(--rule);border-bottom:none;background:transparent;border-radius:10px 10px 0 0;padding:8px 16px;
-  font-size:13.5px;cursor:pointer;color:var(--muted);font-family:var(--sans);margin-bottom:-1px}
-.tab[aria-selected="true"]{background:var(--card);color:var(--accent);font-weight:550}
-.tabpanel[hidden]{display:none}
+/* prompt strip and image pickers */
+.strip{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 10px;margin:0 -2px;scrollbar-width:thin}
+.strip button{flex:0 0 auto;width:54px;height:54px;border-radius:6px;border:2px solid transparent;padding:0;background-color:var(--n2);background-repeat:no-repeat;cursor:pointer;opacity:.72;transition:opacity .15s}
+.strip button:hover{opacity:1}
+.strip button[aria-pressed="true"]{border-color:var(--s1);opacity:1}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px}
+@media (max-width:560px){.pair{grid-template-columns:1fr}}
+.colhead{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--fg);margin:0 0 6px}
+.main-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:6px;background:var(--n2);cursor:zoom-in}
+.seeds{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+.seeds button{position:relative;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;overflow:hidden;cursor:pointer;background:var(--n2)}
+.seeds button img{display:block;width:100%;height:100%;object-fit:cover;opacity:.8}
+.seeds button:hover img,.seeds button[aria-pressed="true"] img{opacity:1}
+.seeds button[aria-pressed="true"]{border-color:var(--s1)}
+.seeds .pick{position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:var(--s1);box-shadow:0 0 0 2px var(--bg)}
+.prompt-text{font-family:var(--sans);font-size:14.5px;line-height:1.5;color:var(--fg-2);margin:14px 0 0}
+.prompt-text .k{display:block;font-size:12.5px;color:var(--muted);margin-bottom:2px}
+.four{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:6px}
+.four button{padding:0;border:0;background:var(--n2);border-radius:6px;overflow:hidden;cursor:zoom-in;aspect-ratio:1}
+.four img{display:block;width:100%;height:100%;object-fit:cover}
 
-/* ---------- architecture figure ---------- */
-.archfig{background:var(--card);border:1px solid var(--rule);border-radius:18px;padding:22px 18px 16px;box-shadow:var(--shadow);margin:34px 0 10px}
-.archscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.archscroll svg{min-width:880px;width:100%;height:auto;display:block}
-.archfig .legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:12.5px;color:var(--muted);padding:12px 6px 2px;border-top:1px solid var(--rule);margin-top:12px}
-.archfig .legend span{display:inline-flex;align-items:center;gap:7px}
-.sw{width:14px;height:14px;border-radius:4px;display:inline-block}
-.archdetail{min-height:62px;font-size:14.5px;color:var(--muted);padding:12px 8px 2px}
-.archdetail b{color:var(--ink)}
-svg .node{cursor:pointer;transition:opacity .18s}
-svg .node rect.box{transition:all .18s}
-svg.dim .node{opacity:.34}
-svg.dim .node.on{opacity:1}
-svg.dim .edge{opacity:.25}
-svg.dim .edge.on{opacity:1}
-svg .edge{transition:opacity .18s}
-svg text{font-family:var(--sans)}
+/* before/after slider */
+.cmp{position:relative;width:100%;aspect-ratio:1;border-radius:6px;overflow:hidden;background:var(--n2);touch-action:pan-y;cursor:ew-resize;user-select:none;-webkit-user-select:none}
+.cmp img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.cmp .b{clip-path:inset(0 0 0 50%)}
+.cmp .bar{position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);pointer-events:none}
+.cmp .knob{position:absolute;top:50%;left:50%;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:#fff;box-shadow:0 1px 5px rgba(0,0,0,.35);pointer-events:none}
+.cmp .knob::before,.cmp .knob::after{content:"";position:absolute;top:10px;border:5px solid transparent}
+.cmp .knob::before{left:3px;border-right:6px solid #333}
+.cmp .knob::after{right:3px;border-left:6px solid #333}
+.cmp .lab{position:absolute;top:8px;max-width:46%;font-family:var(--sans);font-size:12px;line-height:1.3;padding:2px 7px;border-radius:4px;background:rgba(0,0,0,.58);color:#fff;pointer-events:none}
+.cmp .lab.l{left:8px}.cmp .lab.r{right:8px;text-align:right}
+.cmp-wrap{max-width:460px;margin:12px auto 0}
 
-/* ---------- gallery ---------- */
-.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:18px 0}
-.gal button{padding:0;border:0;background:none;cursor:zoom-in;border-radius:10px;overflow:hidden;position:relative;aspect-ratio:1;display:block}
-.gal img{width:100%;height:100%;object-fit:cover;transition:transform .35s ease}
-.gal button:hover img{transform:scale(1.045)}
-.gal .cap{position:absolute;left:0;right:0;bottom:0;padding:22px 9px 7px;font-size:11.5px;color:#fff;text-align:left;
-  background:linear-gradient(transparent,rgba(0,0,0,.72));opacity:0;transition:opacity .2s;line-height:1.35}
-.gal button:hover .cap,.gal button:focus-visible .cap{opacity:1}
-.gal button[hidden]{display:none}
-.wide .gal{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
-#facegal{grid-template-columns:repeat(4,1fr)}
-@media(max-width:640px){#facegal{grid-template-columns:repeat(2,1fr)}}
-.swipe{display:none;font-size:12.5px;color:var(--faint);text-align:right;padding:0 6px 6px;font-family:var(--mono)}
-@media(max-width:900px){.swipe{display:block}}
+/* charts */
+.chart{position:relative;margin-top:14px}
+svg.ch{display:block;width:100%;height:auto;overflow:visible}
+svg.ch text{font-family:var(--sans);font-size:12px;fill:var(--muted)}
+svg.ch text.t2{fill:var(--fg-2);font-size:12.5px}
+svg.ch text.t1{fill:var(--fg);font-size:13px;font-weight:600}
+svg.ch .gl{stroke:var(--grid);stroke-width:1}
+svg.ch .ax{stroke:var(--n1);stroke-width:1}
+svg.ch .pt{cursor:pointer}
+svg.ch .pt:focus{outline:none}
+svg.ch .pt:focus-visible .ring{stroke:var(--s1);stroke-width:2}
+.tip{position:absolute;pointer-events:none;background:var(--bg);color:var(--fg);border:1px solid var(--rule);border-radius:6px;padding:6px 9px;font-family:var(--sans);font-size:12.5px;line-height:1.4;box-shadow:0 2px 10px rgba(0,0,0,.12);white-space:nowrap;z-index:5;transform:translate(-50%,calc(-100% - 10px))}
+.tip b{font-weight:600}
+.tip[hidden]{display:none}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-family:var(--sans);font-size:13px;color:var(--fg-2);margin-top:6px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend i.dot{border-radius:50%}
 
-.lb{position:fixed;inset:0;background:rgba(8,8,10,.9);z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
-.lb.open{display:flex}
-.lb .in{max-width:min(900px,96vw);width:100%}
-.lb img{max-height:74vh;width:auto;margin:0 auto;border-radius:10px}
-.lb .txt{color:#e8e8ea;font-size:15px;margin-top:14px;line-height:1.55;text-align:center}
-.lb .txt small{display:block;color:#9a9aa5;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px}
-.lb .x{position:absolute;top:14px;right:18px;background:none;border:0;color:#fff;font-size:30px;cursor:pointer;line-height:1}
-.lb .nav{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.1);border:0;color:#fff;
-  font-size:26px;width:46px;height:46px;border-radius:50%;cursor:pointer}
-.lb .nav:hover{background:rgba(255,255,255,.2)}
-.lb .prev{left:14px}.lb .next{right:14px}
+/* code */
+.code{position:relative;margin:1.3em 0}
+.code pre{background:var(--code);border-radius:8px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.62;margin:0}
+.code pre code{background:none;padding:0;font-size:inherit}
+.copy{position:absolute;top:8px;right:8px;font-family:var(--sans);font-size:12.5px;border:1px solid var(--rule);background:var(--bg);color:var(--fg-2);border-radius:6px;padding:2px 9px;cursor:pointer}
+.copy:hover{color:var(--fg);border-color:var(--n1)}
 
-/* ---------- before/after ---------- */
-.ba{position:relative;aspect-ratio:1;border-radius:14px;overflow:hidden;user-select:none;touch-action:none;cursor:ew-resize;box-shadow:var(--shadow);background:var(--frozen)}
-.ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
-.ba .after{clip-path:inset(0 0 0 50%)}
-.ba .handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);pointer-events:none}
-.ba .handle::after{content:"⇆";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;
-  background:#fff;color:#222;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
-.ba .tag{position:absolute;top:12px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-  background:rgba(0,0,0,.55);color:#fff;padding:4px 9px;border-radius:6px;pointer-events:none}
-.ba .tag.l{left:12px}.ba .tag.r{right:12px}
-.edgrid{display:grid;grid-template-columns:1.3fr 1fr;gap:22px;align-items:start;margin:22px 0}
-@media(max-width:760px){.edgrid{grid-template-columns:1fr}}
-.edlist{display:flex;flex-direction:column;gap:6px}
-.edlist button{text-align:left;border:1px solid var(--rule);background:var(--card);border-radius:10px;padding:10px 13px;
-  cursor:pointer;font-family:var(--sans);color:var(--muted);font-size:13.8px;line-height:1.4;transition:all .15s}
-.edlist button:hover{border-color:var(--accent)}
-.edlist button[aria-pressed="true"]{border-color:var(--accent);color:var(--ink);background:var(--accent-soft)}
-.edlist button .ty{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:2px}
+/* architecture */
+.arch-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.arch-scroll svg{min-width:600px}
+svg.arch text{font-family:var(--sans)}
+svg.arch .node{cursor:pointer}
+svg.arch .node:focus{outline:none}
+svg.arch .node:focus-visible .box{stroke-width:2.5}
+svg.arch .box{transition:opacity .15s}
+svg.arch.focused .node:not(.on),svg.arch.focused .edge:not(.on){opacity:.3}
+.arch-detail{font-family:var(--sans);font-size:14.5px;line-height:1.5;color:var(--fg-2);margin:12px 2px 0;min-height:3em}
+.arch-detail b{color:var(--fg)}
 
-/* ---------- compare 1024 ---------- */
-.cmp3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:20px 0 6px}
-.cmp3 .c{border-radius:12px;overflow:hidden;background:var(--card);border:1px solid var(--rule)}
-.cmp3 .c img{aspect-ratio:1;object-fit:cover;width:100%}
-.cmp3 .c .l{font-size:12.5px;padding:9px 11px;color:var(--muted);line-height:1.4}
-.cmp3 .c .l b{color:var(--ink);display:block;font-size:13px}
-@media(max-width:640px){.cmp3{grid-template-columns:1fr}}
-.zoomtoggle{margin-top:6px}
+/* lightbox */
+.lb{position:fixed;inset:0;z-index:100;background:rgba(12,12,12,.92);display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.lb[hidden]{display:none}
+.lb figure{margin:0;max-width:min(94vw,720px);counter-increment:none}
+.lb img{display:block;max-height:78vh;width:auto;max-width:100%;margin:0 auto;border-radius:6px}
+.lb figcaption{color:#d9d6d0;text-align:center}
+.lb figcaption::before{content:none}
+.lb .x{position:absolute;top:10px;right:14px;background:none;border:0;color:#fff;font-size:28px;line-height:1;cursor:pointer;padding:6px}
 
-footer{border-top:1px solid var(--rule);margin-top:80px;padding:36px 0 60px;font-size:14px;color:var(--faint)}
-footer a{color:var(--muted)}
-hr.sec{border:none;border-top:1px solid var(--rule);margin:56px 0}
-@media(max-width:640px){body{font-size:16px}header.hero{padding:44px 0 16px}h2{font-size:26px;margin-top:54px}.stat .v{font-size:22px}}
-svg .ax{stroke:var(--rule);stroke-width:1}
-svg .gl{stroke:var(--grid);stroke-width:1}
-svg.chart text{fill:var(--muted);font-family:var(--mono);font-size:11px}
-svg.chart text.lbl{fill:var(--ink);font-family:var(--sans);font-size:12px}
+footer{border-top:1px solid var(--rule);margin-top:72px;padding-block:28px 56px;padding-inline:16px;font-family:var(--sans);font-size:14px;color:var(--muted)}
+footer .in{max-width:var(--col);margin:0 auto}
+footer a{color:var(--fg-2)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media (max-width:640px){body{font-size:16.5px}article h2{font-size:1.4rem}}
 </style>
 </head>
 <body>
-<nav class="top"><div class="wide" style="position:relative">
-  <span class="brand">Mobile-O&nbsp;<i>v2</i></span>
-  <a class="nl" href="#examples">Examples</a>
-  <a class="nl" href="#results">Results</a>
-  <a class="nl" href="#grpo">GRPO</a>
-  <a class="nl" href="#hires">1024px</a>
-  <a class="nl" href="#people">People</a>
-  <span class="sp"></span>
-  <button class="tbtn" id="theme" aria-label="Toggle light and dark theme">◐</button>
-  <div class="progress" id="prog"></div>
-</div></nav>
 
-<div class="wrap">
-<header class="hero">
-  <div class="eyebrow">Technical report · September 2026</div>
-  <h1>Mobile-O v2: generating and editing images on a <em>phone&nbsp;budget</em></h1>
-  <p class="standfirst">A frozen 1.3B vision-language model, a small learned connector, and a 600M
-  diffusion transformer at a fixed 256-token latent. This is how we took it from supervised training
-  through multi-task reinforcement learning, model merging and a 1024px decoder &mdash; with every
-  number measured, including the ones that went the wrong way.</p>
-  <div class="byline">
-    <span><b>Text-to-image</b> + <b>instruction editing</b></span>
-    <span><b>Trained</b> 600.6M params</span>
-    <span><b>Output</b> 512px, or 1024px via decoder head</span>
-  </div>
-  <div class="links">
-    <a class="btn primary" href="https://github.com/ahmedheakl/mobileov2-minicpm">Code &nbsp;→</a>
-    <a class="btn" href="https://huggingface.co/ahmedheakl/rand-mobile">Weights on Hugging Face</a>
-    <a class="btn" href="#use">Run it in 3 lines</a>
-  </div>
-</header>
+<header class="site"><div class="in">
+  <a class="mark" href="#top">Mobile-O</a>
+  <nav aria-label="Links"><a href="https://arxiv.org/abs/2602.20161">Mobile-O v1 paper</a></nav>
+  <button class="theme" id="theme" type="button" aria-label="Switch between light and dark">Dark</button>
+</div></header>
 
-<div class="tldr">
-  <h4>What we contribute</h4>
-  <ul>
-    <li><b>A unified generator and editor</b> at a mobile latency budget. Against Mobile-O v1 on the same
-      scorers: <b>GenEval 0.792 → 0.912</b>, <b>DPG 73.9 → 80.7</b>, <b>FID 23.3 → 13.5</b>.</li>
-    <li><b>Multi-task GRPO with dense rewards.</b> A detector-only reward reward-hacked: GenEval rose to 0.95
-      while DPG <i>fell</i> from 72.6 to 66.0. Scoring the full caption with a VLM's log-likelihood, and
-      standardizing each reward within its own task pool before mixing, fixed it &mdash; and lets one RL run
-      train generation and editing together.</li>
-    <li><b>A 1024px decoder head</b> that reads the frozen VAE decoder's features: 4× the pixels for
-      <b>+7% latency</b>, content-neutral, FID &minus;0.5. The diffusion model never sees more tokens.</li>
-    <li><b>Model merging that beats its ingredients.</b> Averaging three RL models, each strong on a
-      different target, beats <i>all three</i> on DPG, ImageReward and GEdit at once &mdash; and meets three of six targets.</li>
-    <li><b>Faces at the real-photo ceiling.</b> On paired tests against the photographs they were edited from,
-      our faces are statistically indistinguishable from real ones.</li>
-    <li><b>A measured diagnosis of the editing gap:</b> the model reproduces regions it should leave alone
-      2.64× worse than copying the source &mdash; because the source pixels never reach it.</li>
-  </ul>
+<main id="top">
+<div class="post-head">
+  <h1>Mobile-O v2: A Small Model for Generating and Editing Images</h1>
+  <div class="meta">September 30, 2026</div>
 </div>
 
-<nav class="toc" aria-label="Contents">
-  <a href="#arch"><span>01</span>Architecture</a>
-  <a href="#examples"><span>02</span>Examples</a>
-  <a href="#results"><span>03</span>Results</a>
-  <a href="#grpo"><span>04</span>Multi-task GRPO</a>
-  <a href="#hires"><span>05</span>The 1024px head</a>
-  <a href="#merge"><span>06</span>Model merging</a>
-  <a href="#recipe"><span>07</span>The inference recipe</a>
-  <a href="#editing"><span>08</span>Editing</a>
-  <a href="#people"><span>09</span>People and faces</a>
-  <a href="#wall"><span>10</span>The editing wall</a>
-  <a href="#use"><span>11</span>Use it</a>
-  <a href="#open"><span>12</span>What is open</a>
+<div class="cover">
+  <div class="row">
+    <picture><source srcset="assets/gif/01_portrait.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/01_portrait.gif" width="320" height="320" alt="A portrait of an elderly fisherman in a yellow raincoat forming out of noise"></picture>
+    <picture><source srcset="assets/gif/02_wildlife.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/02_wildlife.gif" width="320" height="320" alt="A red fox in a snowy meadow forming out of noise"></picture>
+    <picture><source srcset="assets/gif/08_fantasy.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/08_fantasy.gif" width="320" height="320" alt="A whale floating over a seaside town forming out of noise"></picture>
+    <picture><source srcset="assets/gif/10_cityscape.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/10_cityscape.gif" width="320" height="320" alt="A rainy neon-lit city street forming out of noise"></picture>
+  </div>
+  <p>Mobile-O v2 turning random noise into an image. Each clip steps through the sampling process, from pure noise to the finished picture.</p>
+</div>
+
+<div class="shell">
+<nav class="toc" id="toc" aria-label="Contents">
+  <ol>
+    <li><a href="#top">Introduction</a></li>
+    <li><a href="#new">What's new</a></li>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#examples">Examples</a></li>
+    <li><a href="#training">Training</a></li>
+    <li><a href="#settings">Sampler settings</a></li>
+    <li><a href="#hires">1024×1024 output</a></li>
+    <li><a href="#faces">Faces</a></li>
+    <li><a href="#cite">Citation</a></li>
+  </ol>
 </nav>
 
-<h2 id="arch"><span class="num">01</span>Architecture</h2>
-<p>Mobile-O v2 is assembled from a strong frozen reader and a small trained writer. A frozen
-<b>MiniCPM-V-4.6</b> reads the prompt &mdash; and, when editing, the source image. A learned
-<b>connector</b> turns its last hidden layer into the diffusion model's cross-attention space. A
-<b>SANA-600M</b> diffusion transformer denoises a 32-channel latent, and a frozen <b>DC-AE</b> decodes it.
-Hover or tap any block.</p>
-</div>
+<article>
 
-<div class="wide">
-<div class="archfig">
-<div class="swipe">swipe to see the full diagram →</div>
-<div class="archscroll">
-<svg id="archsvg" viewBox="0 0 1212 512" role="img" aria-label="Mobile-O v2 architecture">
+<p>Mobile-O v2 is a small model that creates images from text and edits images from written instructions. It's the second version of <a href="https://arxiv.org/abs/2602.20161">Mobile-O</a>, and like the first one, it's built with phones in mind. The diffusion model that draws each image works on only 256 tokens, and every change we made kept it that way.</p>
+
+<p>v2 pairs a frozen <a href="https://huggingface.co/openbmb/MiniCPM-V-4_6">MiniCPM-V-4.6</a> vision-language model (VLM) with a <a href="https://github.com/NVlabs/Sana">SANA</a> diffusion transformer, for a total of 1.9B parameters. It makes a 512×512 image in about 0.8 seconds on one desktop GPU.<label for="sn-gpu" class="sn-ref"></label><input type="checkbox" id="sn-gpu" class="sn-toggle"><span class="sidenote">One NVIDIA RTX PRO 6000, one image at a time, 20 sampler steps.</span> Compared with v1, it follows prompts more closely, handles long prompts better and makes more realistic images. On GenEval it also beats Janus and JanusFlow, two slightly larger models that can both understand and generate images.</p>
+
+<figure id="fig-teaser">
+  <p class="swipe">Swipe the table to see every model.</p>
+  <div class="tw"><table class="teaser">
+    <thead><tr>
+      <th></th>
+      <th class="us">Mobile-O v2<small>1.9B</small></th>
+      <th>Mobile-O v1<small>1.6B</small></th>
+      <th>JanusFlow<small>2.1B</small></th>
+      <th>Janus<small>2.1B</small></th>
+      <th>Show-o<small>1.6B</small></th>
+      <th>SDXL<small>3.0B</small></th>
+    </tr></thead>
+    <tbody>
+      <tr><th scope="row">GenEval<small>Objects, counts, colors, positions</small></th><td class="us">0.91</td><td>0.79</td><td>0.63</td><td>0.61</td><td>0.69</td><td>0.55</td></tr>
+      <tr><th scope="row">DPG-Bench<small>Long, detailed prompts</small></th><td class="us">80.7</td><td>73.9</td><td>80.1</td><td>79.7</td><td class="na">–</td><td>74.7</td></tr>
+      <tr><th scope="row">MMMU<small>Understanding images</small></th><td class="us">53.8</td><td>34.6</td><td>29.3</td><td>30.5</td><td>27.4</td><td class="na">–</td></tr>
+    </tbody>
+  </table></div>
+  <figcaption>Mobile-O v2 compared with Mobile-O v1, three other models of similar size that both understand and generate images, and the text-to-image model SDXL. Sizes count the vision encoder, language model and diffusion model. We measured both Mobile-O models ourselves with the same code, and the other numbers come from the models' papers.<label for="sn-v1" class="sn-ref"></label><input type="checkbox" id="sn-v1" class="sn-toggle"><span class="sidenote">The v1 paper reports 0.74 on GenEval. Our evaluation of v1, using its own sampling code, gives 0.79, and that is the number shown here. For Show-o we list its CLIP-ViT version.</span> A dash means the model can't do that task or its paper doesn't report it.</figcaption>
+</figure>
+
+<p>The difference is easy to see in the images themselves. For each prompt in Figure 2, both models made four images, and we show the one we liked best from each.</p>
+
+<figure id="fig-vs">
+  <div id="vs"></div>
+  <figcaption>Mobile-O v1 (top) and v2 (bottom) on six of our test prompts. Click an image to see it larger with its full prompt. v2 follows the prompts more closely. Its pickup truck towers over the Porsche, as the prompt asks, and its tree grows through the chain-link fence. It also includes details that v1 leaves out, such as the dew on the dragonfly, the brain coral on the reef and the seabirds around the whale. Figure 6 has all 20 prompts with every image from both models.</figcaption>
+</figure>
+
+<h2 id="new">What's new in v2</h2>
+<ul>
+  <li><b>Generation and editing in one model.</b> The same weights create images from text and edit existing images from instructions.</li>
+  <li><b>A stronger reader.</b> A frozen MiniCPM-V-4.6 reads the prompt, and the source image when editing. We only train a small connector and the diffusion transformer.</li>
+  <li><b>Reinforcement learning on both tasks.</b> One training run improves generation and editing together, with rewards that check objects, read the whole prompt back from the image, judge edits and check rendered text.</li>
+  <li><b>Sampler settings tuned for people.</b> We sample with 12 steps and guidance 1.5. People look more natural than with the more common 20 steps and higher guidance, and each image takes less time.</li>
+  <li><b>1024×1024 output for 7% more time.</b> A small add-on to the image decoder outputs four times the pixels without changing the diffusion model.</li>
+</ul>
+
+<nav class="inline-toc" aria-label="Contents">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#examples">Examples</a></li>
+    <li><a href="#training">Training</a></li>
+    <li><a href="#settings">Sampler settings</a></li>
+    <li><a href="#hires">1024×1024 output</a></li>
+    <li><a href="#faces">Faces</a></li>
+    <li><a href="#cite">Citation</a></li>
+  </ol>
+</nav>
+
+<h2 id="how">How it works</h2>
+<p>Mobile-O v2 has four parts. Two of them come from existing models and stay frozen, and we train the other two.</p>
+
+<figure id="fig-arch">
+  <div class="panel">
+    <p class="swipe">Swipe to see the whole diagram.</p>
+    <div class="arch-scroll">
+<svg class="arch" id="arch" viewBox="0 0 700 230" role="img" aria-label="Mobile-O v2 pipeline: the prompt and source image go into MiniCPM-V-4.6, then the connector, the SANA diffusion transformer and the DC-AE decoder; an optional head makes 1024px images">
 <defs>
- <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-   <path d="M0,0 L10,5 L0,10 z" style="fill:var(--faint)"/></marker>
- <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-   <path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent-2)"/></marker>
- <linearGradient id="gtr" x1="0" y1="0" x2="0" y2="1">
-   <stop offset="0" style="stop-color:var(--accent-soft)"/><stop offset="1" style="stop-color:var(--card)"/></linearGradient>
- <linearGradient id="gnew" x1="0" y1="0" x2="0" y2="1">
-   <stop offset="0" style="stop-color:var(--teal-soft)"/><stop offset="1" style="stop-color:var(--card)"/></linearGradient>
- <pattern id="noise" width="6" height="6" patternUnits="userSpaceOnUse">
-   <rect width="6" height="6" style="fill:var(--frozen)"/>
-   <circle cx="1.5" cy="1.5" r=".8" style="fill:var(--faint)" opacity=".5"/>
-   <circle cx="4.5" cy="4" r=".6" style="fill:var(--faint)" opacity=".35"/></pattern>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--n3)"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--s1)"/></marker>
 </defs>
-<g class="edge" data-e="e3"><path d="M378,234 L436,234" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
-<text x="407.0" y="217.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">hidden</text>
-<text x="407.0" y="229.5" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">states</text>
+<g class="edge" data-e="e1"><path d="M96,63 H122" style="fill:none;stroke:var(--n3);stroke-width:1.5" marker-end="url(#ah)"/></g>
+<g class="edge" data-e="e2"><path d="M96,173 H122" style="fill:none;stroke:var(--n3);stroke-width:1.5" marker-end="url(#ah)"/></g>
+<g class="edge" data-e="e3"><path d="M240,119 H264" style="fill:none;stroke:var(--n3);stroke-width:1.5" marker-end="url(#ah)"/></g>
+<g class="edge" data-e="e4"><path d="M362,119 H388" style="fill:none;stroke:var(--n3);stroke-width:1.5" marker-end="url(#ah)"/></g>
+<g class="edge" data-e="e5"><path d="M446,34 V58" style="fill:none;stroke:var(--n3);stroke-width:1.5" marker-end="url(#ah)"/></g>
+<g class="edge" data-e="e6"><path d="M502,86 H528" style="fill:none;stroke:var(--n3);stroke-width:1.5" marker-end="url(#ah)"/></g>
+<g class="edge" data-e="e7"><path d="M634,86 H650" style="fill:none;stroke:var(--n3);stroke-width:1.5" marker-end="url(#ah)"/></g>
+<g class="edge" data-e="e8"><path d="M582,112 V148" style="fill:none;stroke:var(--s1);stroke-width:1.5" marker-end="url(#ahb)"/></g>
+<g class="edge" data-e="e9"><path d="M634,176 H646" style="fill:none;stroke:var(--s1);stroke-width:1.5" marker-end="url(#ahb)"/></g>
+
+<g class="node" data-n="prompt" tabindex="0" role="button" aria-label="Text prompt">
+  <rect class="box" x="0" y="40" width="96" height="46" rx="8" style="fill:var(--bg);stroke:var(--n1);stroke-width:1.2"/>
+  <text x="48" y="60" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Text prompt</text>
+  <text x="48" y="76" text-anchor="middle" style="font-size:11px;fill:var(--muted)">or instruction</text>
 </g>
-<g class="edge" data-e="e4"><path d="M592,234 L650,234" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
-<text x="621.0" y="226.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">2304-d</text>
+<g class="node" data-n="image" tabindex="0" role="button" aria-label="Source image">
+  <rect class="box" x="0" y="150" width="96" height="46" rx="8" style="fill:var(--bg);stroke:var(--n1);stroke-width:1.2"/>
+  <text x="48" y="170" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Source image</text>
+  <text x="48" y="186" text-anchor="middle" style="font-size:11px;fill:var(--muted)">when editing</text>
 </g>
-<g class="edge" data-e="e5"><path d="M738.0,414 L738.0,366" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
+<g class="node" data-n="vlm" tabindex="0" role="button" aria-label="MiniCPM-V-4.6, frozen">
+  <rect class="box" x="124" y="24" width="116" height="190" rx="10" style="fill:var(--hover);stroke:var(--n1);stroke-width:1.2"/>
+  <text x="182" y="50" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">MiniCPM-V-4.6</text>
+  <text x="182" y="66" text-anchor="middle" style="font-size:11px;fill:var(--muted)">frozen · 1.30B</text>
+  <rect x="136" y="82" width="92" height="44" rx="6" style="fill:var(--bg);stroke:var(--rule)"/>
+  <text x="182" y="101" text-anchor="middle" style="font-size:11px;fill:var(--fg-2)">language</text>
+  <text x="182" y="115" text-anchor="middle" style="font-size:11px;fill:var(--fg-2)">model</text>
+  <rect x="136" y="150" width="92" height="44" rx="6" style="fill:var(--bg);stroke:var(--rule)"/>
+  <text x="182" y="169" text-anchor="middle" style="font-size:11px;fill:var(--fg-2)">vision</text>
+  <text x="182" y="183" text-anchor="middle" style="font-size:11px;fill:var(--fg-2)">encoder</text>
+  <path d="M182,150 V130" style="fill:none;stroke:var(--n3);stroke-width:1.2" marker-end="url(#ah)"/>
 </g>
-<g class="edge" data-e="e6"><path d="M826,128 L886,128" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
-<text x="856.0" y="111.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">32×16×16</text>
-<text x="856.0" y="123.5" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">latent</text>
+<g class="node" data-n="conn" tabindex="0" role="button" aria-label="Connector, trained">
+  <rect class="box" x="266" y="84" width="96" height="70" rx="8" style="fill:var(--bg);stroke:var(--s1);stroke-width:1.6"/>
+  <text x="314" y="112" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Connector</text>
+  <text x="314" y="128" text-anchor="middle" style="font-size:11px;fill:var(--muted)">trained · 8.8M</text>
 </g>
-<g class="edge" data-e="e7"><path d="M1032,128 L1090,128" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
-<text x="1061.0" y="119.0" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.2px">512px</text>
+<g class="node" data-n="noise" tabindex="0" role="button" aria-label="Starting noise">
+  <rect class="box" x="390" y="0" width="112" height="34" rx="8" style="fill:var(--bg);stroke:var(--n1);stroke-width:1.2"/>
+  <text x="446" y="21" text-anchor="middle" style="font-size:12px;fill:var(--fg-2)">random noise</text>
 </g>
-<g class="edge" data-e="e8"><path d="M959.0,190 L959.0,238" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" marker-end="url(#aht)"/>
-<text x="997.0" y="210.0" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">128 ch</text>
-<text x="997.0" y="222.5" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">@ 512</text>
+<g class="node" data-n="dit" tabindex="0" role="button" aria-label="SANA diffusion transformer, trained">
+  <rect class="box" x="390" y="60" width="112" height="122" rx="10" style="fill:var(--bg);stroke:var(--s1);stroke-width:1.6"/>
+  <text x="446" y="88" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">SANA-600M</text>
+  <text x="446" y="104" text-anchor="middle" style="font-size:11px;fill:var(--muted)">diffusion transformer</text>
+  <text x="446" y="120" text-anchor="middle" style="font-size:11px;fill:var(--muted)">trained · 591.7M</text>
+  <text x="446" y="156" text-anchor="middle" style="font-size:12px;font-weight:600;fill:var(--s1)">256 tokens</text>
 </g>
-<g class="edge" data-e="e9"><path d="M1032,300 L1090,300" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" marker-end="url(#aht)"/>
-<text x="1061.0" y="291.0" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">1024px</text>
+<g class="node" data-n="dec" tabindex="0" role="button" aria-label="DC-AE decoder, frozen">
+  <rect class="box" x="530" y="60" width="104" height="52" rx="8" style="fill:var(--hover);stroke:var(--n1);stroke-width:1.2"/>
+  <text x="582" y="82" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">DC-AE decoder</text>
+  <text x="582" y="98" text-anchor="middle" style="font-size:11px;fill:var(--muted)">frozen · 159M</text>
 </g>
-<g class="edge" data-e="e10"><path d="M80.0,374 L80.0,478 L436,478" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" stroke-dasharray="6 5" marker-end="url(#aht)"/>
-<text x="258.0" y="470.0" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.2px">source-latent gate  ·  in training</text>
+<g class="node" data-n="head" tabindex="0" role="button" aria-label="1024px head, optional">
+  <rect class="box" x="530" y="150" width="104" height="52" rx="8" style="fill:var(--bg);stroke:var(--s1);stroke-width:1.6"/>
+  <text x="582" y="172" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">1024px head</text>
+  <text x="582" y="188" text-anchor="middle" style="font-size:11px;fill:var(--muted)">optional · 106.5M</text>
 </g>
-<g class="edge" data-e="e11"><path d="M592,478 L621,478 L621,255.5 L650,255.5" style="fill:none;stroke:var(--accent-2);stroke-width:1.6" stroke-dasharray="6 5" marker-end="url(#aht)"/>
+<g class="node" data-n="o512" tabindex="0" role="button" aria-label="512 by 512 image">
+  <rect class="box" x="652" y="68" width="36" height="36" rx="4" style="fill:var(--n2);stroke:var(--n1)"/>
+  <text x="670" y="120" text-anchor="middle" style="font-size:10.5px;fill:var(--muted)">512</text>
 </g>
-<g class="node" data-n="prompt" tabindex="0">
-<rect class="box" x="16" y="80" width="128" height="56" rx="12" style="fill:var(--card);stroke:var(--rule);stroke-width:1.2"/>
-<text x="80.0" y="105" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Text prompt</text>
-<text x="80.0" y="122" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">or edit instruction</text>
-
+<g class="node" data-n="o1024" tabindex="0" role="button" aria-label="1024 by 1024 image">
+  <rect class="box" x="648" y="152" width="46" height="46" rx="4" style="fill:var(--n2);stroke:var(--n1)"/>
+  <text x="671" y="214" text-anchor="middle" style="font-size:10.5px;fill:var(--muted)">1024</text>
 </g>
-<g class="node" data-n="image" tabindex="0">
-<rect class="box" x="16" y="318" width="128" height="56" rx="12" style="fill:var(--card);stroke:var(--rule);stroke-width:1.2"/>
-<text x="80.0" y="343" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Source image</text>
-<text x="80.0" y="360" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">editing only</text>
-
-</g>
-<g class="node" data-n="vlm" tabindex="0">
-<rect class="box" x="194" y="40" width="184" height="384" rx="16" style="fill:var(--frozen);stroke:var(--faint);stroke-width:1.2;stroke-dasharray:5 4"/>
-<text x="286.0" y="66" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">MiniCPM-V-4.6</text>
-<text x="286.0" y="83" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">vision-language model</text>
-<rect x="208" y="96" width="156" height="150" rx="10" style="fill:var(--card);stroke:var(--rule);stroke-width:1"/>
-<text x="286.0" y="169.0" text-anchor="middle" style="fill:var(--ink);font-size:12.5px;font-weight:560">Qwen3.5 decoder</text>
-<text x="286.0" y="185.0" text-anchor="middle" style="fill:var(--muted);font-size:11px">reads the prompt</text>
-<rect x="208" y="292" width="156" height="92" rx="10" style="fill:var(--card);stroke:var(--rule);stroke-width:1"/>
-<text x="286.0" y="336.0" text-anchor="middle" style="fill:var(--ink);font-size:12.5px;font-weight:560">SigLIP + merger</text>
-<text x="286.0" y="352.0" text-anchor="middle" style="fill:var(--muted);font-size:11px">reads the image</text>
-<path d="M286.0,292 L286.0,250" style="fill:none;stroke:var(--faint);stroke-width:1.4" marker-end="url(#ah)"/>
-<text x="294.0" y="275" style="fill:var(--muted);font-family:var(--mono);font-size:9.8px">image tokens</text>
-<rect x="235.3" y="398" width="101.39999999999999" height="18" rx="9" style="fill:var(--card);stroke:var(--frozen-ink);stroke-width:1"/>
-<text x="286.0" y="410.5" text-anchor="middle" style="fill:var(--frozen-ink);font-family:var(--mono);font-size:10.8px;font-weight:500">frozen · 1.30B</text>
-</g>
-<g class="edge" data-e="e1"><path d="M144,108 L208,108" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
-</g>
-<g class="edge" data-e="e2"><path d="M144,346 L208,346" style="fill:none;stroke:var(--faint);stroke-width:1.6" marker-end="url(#ah)"/>
-</g>
-<g class="node" data-n="conn" tabindex="0">
-<rect class="box" x="436" y="104" width="156" height="262" rx="14" style="fill:url(#gtr);stroke:var(--accent);stroke-width:1.6"/>
-<text x="514.0" y="129" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Connector</text>
-<text x="514.0" y="146" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">ours · trained</text>
-<rect x="473.2" y="340" width="81.6" height="18" rx="9" style="fill:var(--card);stroke:var(--accent);stroke-width:1"/>
-<text x="514.0" y="352.5" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:10.8px;font-weight:500">8.8M params</text>
-<rect x="452" y="150" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="166.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">layer fusion</text><path d="M514.0,175 L514.0,183" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="183" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="199.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">1024 → 512</text><path d="M514.0,208 L514.0,216" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="216" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="232.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">2 × conv refine</text><path d="M514.0,241 L514.0,249" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="249" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="265.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">2 × attn refine</text><path d="M514.0,274 L514.0,282" style="stroke:var(--accent);stroke-width:1.2;opacity:.6"/><rect x="452" y="282" width="124" height="25" rx="7" style="fill:var(--card);stroke:color-mix(in srgb,var(--accent) 40%,transparent);stroke-width:1"/><text x="514.0" y="298.5" text-anchor="middle" style="fill:var(--ink);font-family:var(--mono);font-size:10.8px">512 → 2304</text>
-</g>
-<g class="node" data-n="dit" tabindex="0">
-<rect class="box" x="650" y="60" width="176" height="306" rx="14" style="fill:url(#gtr);stroke:var(--accent);stroke-width:1.6"/>
-<text x="738.0" y="85" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">SANA diffusion</text>
-<text x="738.0" y="102" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">ours · trained</text>
-<rect x="690.6" y="340" width="94.8" height="18" rx="9" style="fill:var(--card);stroke:var(--accent);stroke-width:1"/>
-<text x="738.0" y="352.5" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:10.8px;font-weight:500">591.7M params</text>
-<rect x="668" y="122" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:1"/><text x="738.0" y="133.2" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:9.8px">block 27</text><rect x="668" y="143" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="164" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="185" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="206" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="227" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:0.55"/><rect x="668" y="248" width="140" height="15" rx="4" style="fill:var(--card);stroke:var(--accent);stroke-width:1;opacity:1"/><text x="738.0" y="259.2" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:9.8px">block 0</text><text x="738.0" y="196" text-anchor="middle" style="fill:var(--faint);font-size:13px">⋮</text><text x="738.0" y="286" text-anchor="middle" style="fill:var(--muted);font-size:11px">linear attention</text><text x="738.0" y="300" text-anchor="middle" style="fill:var(--muted);font-size:11px">+ cross-attention</text><text x="738.0" y="320" text-anchor="middle" style="fill:var(--accent);font-family:var(--mono);font-size:11px;font-weight:500">256 tokens</text>
-</g>
-<g class="node" data-n="noise" tabindex="0">
-<rect class="box" x="650" y="414" width="176" height="54" rx="12" style="fill:var(--card);stroke:var(--rule);stroke-width:1.2"/>
-<text x="738.0" y="439" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">Gaussian noise</text>
-<text x="738.0" y="456" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.5px">32 × 16 × 16</text>
-</g>
-<g class="node" data-n="dec" tabindex="0">
-<rect class="box" x="886" y="76" width="146" height="114" rx="14" style="fill:var(--frozen);stroke:var(--faint);stroke-width:1.2;stroke-dasharray:5 4"/>
-<text x="959.0" y="101" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">DC-AE decoder</text>
-<text x="959.0" y="118" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">32× compression</text>
-<rect x="934.7" y="164" width="48.599999999999994" height="18" rx="9" style="fill:var(--card);stroke:var(--frozen-ink);stroke-width:1"/>
-<text x="959.0" y="176.5" text-anchor="middle" style="fill:var(--frozen-ink);font-family:var(--mono);font-size:10.8px;font-weight:500">frozen</text>
-
-</g>
-<g class="node" data-n="head" tabindex="0">
-<rect class="box" x="886" y="238" width="146" height="124" rx="14" style="fill:url(#gnew);stroke:var(--accent-2);stroke-width:1.6"/>
-<text x="959.0" y="263" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">1024px head</text>
-<text x="959.0" y="280" text-anchor="middle" style="fill:var(--muted);font-size:11.5px">ours · decoder-side</text>
-<rect x="911.6" y="336" width="94.8" height="18" rx="9" style="fill:var(--card);stroke:var(--accent-2);stroke-width:1"/>
-<text x="959.0" y="348.5" text-anchor="middle" style="fill:var(--accent-2);font-family:var(--mono);font-size:10.8px;font-weight:500">106.5M params</text>
-
-</g>
-<g class="node" data-n="venc" tabindex="0">
-<rect class="box" x="436" y="458" width="156" height="40" rx="11" style="fill:var(--frozen);stroke:var(--faint);stroke-width:1.2;stroke-dasharray:5 4"/>
-<text x="514.0" y="483" text-anchor="middle" style="fill:var(--ink);font-size:14.5px;font-weight:620">VAE encode</text>
-
-</g>
-<g class="node" data-n="o512" tabindex="0">
-<rect class="box" x="1112.0" y="96" width="64" height="64" rx="9" style="fill:url(#noise);stroke:var(--rule);stroke-width:1"/>
-<path d="M1120.0,150 L1138.0,124.8 L1150.0,135.68 L1156.0,129.28 L1168.0,150 z" style="fill:var(--accent);opacity:.55"/>
-<circle cx="1160.0" cy="113.92" r="5.12" style="fill:var(--accent);opacity:.8"/>
-<text x="1144.0" y="175" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.5px">512 × 512</text>
-</g>
-<g class="node" data-n="o1024" tabindex="0">
-<rect class="box" x="1106.0" y="262" width="76" height="76" rx="9" style="fill:url(#noise);stroke:var(--rule);stroke-width:1"/>
-<path d="M1114.0,328 L1138.0,296.2 L1150.0,309.12 L1156.0,301.52 L1174.0,328 z" style="fill:var(--accent);opacity:.55"/>
-<circle cx="1163.0" cy="283.28" r="6.08" style="fill:var(--accent);opacity:.8"/>
-<text x="1144.0" y="353" text-anchor="middle" style="fill:var(--muted);font-family:var(--mono);font-size:10.5px">1024 × 1024</text>
-</g>
-</svg></div>
-<div class="archdetail" id="archdetail"><b>Tap a block</b> to see what it does, whether it is trained, and what it costs.</div>
-<div class="legend">
-  <span><i class="sw" style="background:var(--frozen);border:1.2px dashed var(--faint)"></i>frozen, off-the-shelf</span>
-  <span><i class="sw" style="background:var(--accent-soft);border:1.6px solid var(--accent)"></i>trained by us</span>
-  <span><i class="sw" style="background:var(--teal-soft);border:1.6px solid var(--accent-2)"></i>new decoder-side component</span>
-  <span><i class="sw" style="border-top:2px dashed var(--accent-2);height:0;width:18px;border-radius:0"></i>experimental, training now</span>
-</div>
-</div>
-</div>
-
-<div class="wrap">
-<p>The number that governs every design decision is <b>256</b>. A 512px image is a 16×16 latent, which
-is 256 transformer tokens. That is a latency budget, not a quality setting, and it is fixed. Most of the
-standard moves in image editing &mdash; appending the source image as extra tokens, diptych layouts,
-larger latents &mdash; buy quality by spending tokens, so they are off the table here. Several results
-below are shaped entirely by that constraint.</p>
-
-<div class="stats">
-  <div class="stat"><div class="v">600.6<small>M</small></div><div class="k">trained parameters<br>connector + diffusion</div></div>
-  <div class="stat"><div class="v">256</div><div class="k">transformer tokens,<br>fixed at every resolution</div></div>
-  <div class="stat"><div class="v">817<small>ms</small></div><div class="k">one image end-to-end,<br>batch 1, 20 steps</div></div>
-  <div class="stat"><div class="v">+7%</div><div class="k">latency for 1024px<br>via the decoder head</div></div>
-</div>
-
-<p>Only the middle two components are trained. The released artifact is therefore a <i>head</i>, not a
-model: 602 tensors that pair with stock weights for the vision-language model and the autoencoder, which
-download from their own repositories on first run.</p>
-</div>
-
-<div class="wrap">
-<h2 id="examples"><span class="num">02</span>Examples</h2>
-<p>Twenty prompts chosen to stress different things: skin and rim light, fur at telephoto, specular
-highlights, glass refraction, counting with colour binding, and five dense paragraph-length prompts
-taken directly from DPG-Bench. Click any image for its full prompt.</p>
-<div class="note teal"><span class="lbl">How these were chosen</span>
-<p>Each prompt was sampled with four seeds and the image shown is the best of the four, <b>chosen by
-eye</b>. Every seed is kept. This is a curated gallery, not a random draw &mdash; the benchmark numbers in
-section 03 are the unselected view. The editing examples in section 08 and the faces in section 09 are
-<b>not</b> selected.</p></div>
-</div>
-<div class="wide">
-<div class="ctrls" role="group" aria-label="Filter examples" id="genchips">
-  <button class="chip" data-g="all" aria-pressed="true">All 20</button>
-  <button class="chip" data-g="photo" aria-pressed="false">Photographic</button>
-  <button class="chip" data-g="scene" aria-pressed="false">Scenes</button>
-  <button class="chip" data-g="detail" aria-pressed="false">Detail &amp; objects</button>
-  <button class="chip" data-g="style" aria-pressed="false">Style &amp; text</button>
-  <button class="chip" data-g="long" aria-pressed="false">Dense DPG prompts</button>
-</div>
-<div class="gal" id="gengal"></div>
-</div>
-
-<div class="wrap">
-<figcaption style="margin-top:4px">512×512, 20 steps, cfg 1.5. One honest miss is in there: the shop sign was
-asked for <b>"THE DAILY GRIND"</b> and reads <b>"THE DALLY GRID"</b>. Legible, well-composed text with
-letter-level errors is typical of where text rendering sits at this scale.</figcaption>
-
-<h2 id="results"><span class="num">03</span>Results</h2>
-<p class="lead">Against the model it replaces, and against the targets we set at the start.</p>
-
-<h3>Mobile-O v1 → v2</h3>
-<p>Both rows measured here with identical scorers and reference sets. The released v1 was run through its
-own official inference path so it is compared as shipped.</p>
-<div class="tbl"><table>
-<thead><tr><th>Benchmark</th><th>Mobile-O v1<span class="t">0.5B, released</span></th><th>Mobile-O v2<span class="t">ours</span></th><th>change</th></tr></thead>
-<tbody>
-<tr><td>GenEval &uarr;</td><td>0.792</td><td><b>0.912</b></td><td class="hit">+0.120</td></tr>
-<tr><td>DPG-Bench &uarr;</td><td>73.92</td><td><b>80.68</b></td><td class="hit">+6.76</td></tr>
-<tr><td>FID, MJHQ-30K &darr;</td><td>23.26</td><td><b>13.51</b></td><td class="hit">&minus;9.75</td></tr>
-<tr><td>MMMU (understanding) &uarr;</td><td>34.6</td><td><b>53.8</b></td><td class="hit">+19.2</td></tr>
-</tbody></table></div>
-<figcaption>v2 at the protocol setting (cfg 1.5, 20 steps). v1's published GenEval is 0.74; through its own
-path we measure 0.792. v2's understanding is MiniCPM-V-4.6's exactly &mdash; it is frozen, so our training
-cannot degrade it. We leave ImgEdit out of this table: v1's 2.5 was judged by GPT-4o and ours by a local
-Qwen2.5-VL-72B, and the two scales are not comparable.</figcaption>
-
-<h3>The full scoreboard</h3>
-<p>Six targets were fixed at the start of the project. <b>Our merged model meets three of them at one
-setting</b> &mdash; GenEval, ImageReward and GEdit. Across all experiments, four of the six have been hit at
-least once; DPG &ge; 85 and ImgEdit &ge; 3.5 never have. Click a column to sort.</p>
-</div>
-
-<div class="wide">
-<div class="ctrls" role="group" aria-label="Filter scoreboard" id="sbchips">
-  <button class="chip" data-f="all" aria-pressed="true">All rows</button>
-  <button class="chip" data-f="ours" aria-pressed="false">Our models</button>
-  <button class="chip" data-f="ref" aria-pressed="false">Reference points</button>
-</div>
-<div class="tbl"><table id="sb">
-<thead><tr>
- <th data-s="0">Model &amp; setting</th>
- <th data-s="1">GenEval<span class="t">&ge; 0.90</span></th>
- <th data-s="2">DPG<span class="t">&ge; 85</span></th>
- <th data-s="3">FID<span class="t">&le; 8</span></th>
- <th data-s="4">ImageReward<span class="t">&ge; 0.90</span></th>
- <th data-s="5">CLIP<span class="t">&uarr;</span></th>
- <th data-s="6">ImgEdit<span class="t">&ge; 3.5</span></th>
- <th data-s="7">GEdit<span class="t">&ge; 6.7</span></th>
- <th data-s="8">met</th>
-</tr></thead>
-<tbody>
-<tr data-g="ours" class="hl"><td><b>Merged</b> · cfg 1.5, 12 steps</td><td class="hit">0.902</td><td>82.19</td><td>14.36</td><td class="hit">0.957</td><td>31.90</td><td class="dim">&mdash;</td><td class="hit">6.740</td><td><b>3</b></td></tr>
-<tr data-g="ours"><td><b>Merged</b> · cfg 3.0, 12 steps</td><td class="hit">0.919</td><td>83.23</td><td>16.51</td><td class="hit">1.083</td><td>32.22</td><td class="dim">&mdash;</td><td class="hit">6.750</td><td><b>3</b></td></tr>
-<tr data-g="ours"><td>Merged · cfg 4.5, interval guidance</td><td class="hit">0.906</td><td>83.88</td><td>16.98</td><td class="hit">1.117</td><td>32.27</td><td class="dim">&mdash;</td><td class="dim">&mdash;</td><td>2</td></tr>
-<tr data-g="ours"><td>After GRPO · cfg 3.0</td><td class="hit">0.928</td><td>81.73</td><td>15.40</td><td class="hit">0.925</td><td>32.17</td><td>3.020</td><td>6.620</td><td>2</td></tr>
-<tr data-g="ours"><td>After GRPO · cfg 1.5</td><td class="hit">0.912</td><td>80.68</td><td>13.51</td><td>0.763</td><td>31.78</td><td>3.093</td><td>6.520</td><td>1</td></tr>
-<tr data-g="ours"><td>After supervised training only</td><td>0.837</td><td>79.06</td><td>11.72</td><td>0.654</td><td>31.75</td><td>2.990</td><td>6.380</td><td>0</td></tr>
-<tr data-g="ref"><td><i>Best ever, any experiment</i></td><td class="hit">0.929</td><td>84.61</td><td class="hit">5.96</td><td class="hit">1.117</td><td>&mdash;</td><td>3.142</td><td class="hit">6.750</td><td class="dim">&mdash;</td></tr>
-<tr data-g="ref"><td><i>Stock SANA-600M</i> · Gemma encoder</td><td>0.655</td><td>84.04</td><td class="hit">7.26</td><td class="hit">1.081</td><td>33.57</td><td class="dim">&mdash;</td><td class="dim">&mdash;</td><td>2</td></tr>
-</tbody></table></div>
-</div>
-
-<div class="wrap">
-<figcaption>MJHQ-30K for FID, CLIP and ImageReward. <b>ImgEdit and GEdit use a local Qwen2.5-VL-72B judge</b>
-and are not comparable to GPT-4o-judged leaderboard numbers. "Best ever" takes each column from whichever
-experiment scored highest, so it is a ceiling, not a model &mdash; its FID of 5.96 came from a
-flow-matching-only run whose GenEval is 0.709. PRISM and CVTG appear in the 1024px table in section 05,
-which is the one protocol on which they were measured side by side.</figcaption>
-
-<div class="note"><span class="lbl">Why no single setting wins every column</span>
-<p>Guidance is the strongest lever on alignment: raising it moves GenEval, DPG and ImageReward together.
-It moves FID the wrong way, and &mdash; section 07 &mdash; it makes people look worse. The two reference
-rows matter most: stock SANA-600M, the same diffusion transformer we train, reaches <b>FID 7.26</b> through
-our scorers, so the FID target is inside the architecture's envelope. What costs us FID is the recipe
-&mdash; the conditioning path, and reinforcement learning.</p></div>
-</div>
-
-<div class="wrap">
-<h2 id="grpo"><span class="num">04</span>Multi-task GRPO with dense rewards</h2>
-<p>Supervised training gets the model to follow instructions; reinforcement learning is what gets it to
-follow them <i>precisely</i>. We use GRPO adapted to flow matching: at each step, sample a group of 12
-images per prompt with a stochastic sampler, score them, and push the policy toward the better-than-average
-ones. Only the connector and diffusion transformer are updated; the vision-language model and the
-autoencoder stay frozen, so each prompt is encoded once and reused across the whole group.</p>
-
-<h3>The first reward design reward-hacked</h3>
-<p>Our first runs used the obvious reward: GenEval's own object detector, which checks whether the right
-objects appear in the right counts, colours and positions. It worked exactly as specified &mdash; and that
-was the problem.</p>
-
-<figure>
-  <svg id="hackchart" class="chart" viewBox="0 0 700 290" style="width:100%;height:auto" role="img"
-       aria-label="Under a detector-only reward, GenEval rises while DPG falls"></svg>
-  <figcaption><b>A detector-only reward, over 1,500 RL steps.</b> GenEval climbs from 0.740 to 0.950 while
-  DPG-Bench <i>falls</i> from 72.6 to 66.0. The detector checks short, structured prompts; DPG checks
-  paragraph-length ones. The policy learned to satisfy the detector at the expense of everything the
-  detector could not see.</figcaption>
-</figure>
-
-<p>The detector can only score short, structured prompts &mdash; "three red apples" &mdash; because it
-needs metadata to know what to look for. It is structurally blind to a paragraph describing lighting,
-texture and spatial layout, which is what DPG-Bench and PRISM measure. So we redesigned the reward.</p>
-
-<h3>What we changed</h3>
-<div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
-  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">Dense, not binary</div>
-    <div class="k">The GenEval detector returns a continuous score from mask and CLIP confidences instead of pass/fail, so every sample in the group carries gradient.</div></div>
-  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">Read it back</div>
-    <div class="k">A frozen Qwen3-VL-8B scores the <b>mean log-likelihood of the full prompt given the image</b>. It needs no metadata, so it scores paragraph prompts directly.</div></div>
-  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">Standardize per pool</div>
-    <div class="k">Rewards live on different scales &mdash; [0,1] versus an unbounded log-likelihood. Each is standardized <b>within its own task pool across all GPUs</b> before mixing, never summed raw.</div></div>
-  <div class="stat"><div class="v" style="font-size:16px;font-family:var(--sans);font-weight:620;color:var(--ink)">One run, two tasks</div>
-    <div class="k">Generation and editing prompts share a single RL run with task balancing, plus an OCR edit-distance reward for text and a judge-based reward for edits.</div></div>
-</div>
-
-<h3>What RL bought, and what it cost</h3>
-<p>The same model before and after 500 steps of the revised GRPO, at the same sampler setting:</p>
-<div class="tbl"><table>
-<thead><tr><th>Metric</th><th>after SFT</th><th>after GRPO</th><th>change</th></tr></thead>
-<tbody>
-<tr><td>GenEval &uarr;</td><td>0.837</td><td>0.912</td><td class="hit">+0.075</td></tr>
-<tr><td>DPG-Bench &uarr;</td><td>79.06</td><td>80.68</td><td class="hit">+1.62</td></tr>
-<tr><td>ImageReward &uarr;</td><td>0.654</td><td>0.763</td><td class="hit">+0.109</td></tr>
-<tr><td>ImgEdit &uarr;</td><td>2.99</td><td>3.09</td><td class="hit">+0.10</td></tr>
-<tr><td>GEdit &uarr;</td><td>6.38</td><td>6.52</td><td class="hit">+0.14</td></tr>
-<tr><td>FID &darr;</td><td>11.72</td><td>13.51</td><td style="color:var(--bad);font-weight:600">+1.79</td></tr>
-</tbody></table></div>
-<figcaption>cfg 1.5, 20 steps. <b>DPG now rises under RL instead of falling</b> (+1.6 here, against &minus;6.7 under
-the detector-only reward), alongside GenEval and both editing benchmarks. The revised run changed several
-things at once, so we credit the reward design as a whole rather than any single component. The cost is
-FID: RL consistently gives back one to two points of it, which is why section 06 exists.</figcaption>
-
-<div class="note"><span class="lbl">Two rules the RL work taught us</span>
-<p><b>The online reward curve is not the benchmark.</b> Twice, a run whose reward was climbing produced a
-checkpoint that was worse on held-out evaluation. Only checkpoint evals settle a claim. And <b>RL goes
-after supervised training, never before it</b>: fine-tuning an RL checkpoint with SFT regressed all three
-times we tried it.</p></div>
-</div>
-
-<div class="wrap">
-<h2 id="hires"><span class="num">05</span>The 1024px decoder head</h2>
-<p>At 256 tokens, generating at a 32×32 latent would roughly quadruple the transformer's cost &mdash;
-the one thing the budget exists to prevent. So we produce 1024px <b>after</b> diffusion instead, and
-compared two ways of doing it.</p>
-
-<div class="tbl"><table>
-<thead><tr><th>Approach</th><th>where it acts</th><th>params</th><th>content-neutral?</th></tr></thead>
-<tbody>
-<tr><td><b>Latent upsampler</b></td><td style="font-family:var(--sans);font-size:14px">SwinIR-style, 16×16 → 32×32 latent, <i>before</i> the frozen decoder</td><td>97.5M</td><td style="color:var(--bad)">no</td></tr>
-<tr class="hl"><td><b>Decoder head</b> &middot; shipped</td><td style="font-family:var(--sans);font-size:14px">reads the frozen decoder's 128-ch features at 512px, maps them to 1024px RGB</td><td>106.5M</td><td class="hit">yes</td></tr>
-</tbody></table></div>
-
-<p>The decoder head taps the tensor that normally feeds the decoder's final convolution &mdash; its
-richest spatial representation &mdash; and learns a residual on top of a bicubic ×2 of the ordinary
-512px image. Starting from the bicubic anchor means it begins as a no-op and only learns to add detail.
-The autoencoder and diffusion transformer are both untouched.</p>
-
-<figure>
-  <div class="ctrls" role="group" aria-label="Zoom" style="margin-top:0">
-    <button class="chip" data-z="full" aria-pressed="true">Full frame</button>
-    <button class="chip" data-z="zoom" aria-pressed="false">Centre crop, 2× nearest</button>
-  </div>
-  <div class="cmp3">
-    <div class="c"><img data-full="assets/fox/bicubic.jpg" data-zoom="assets/fox/bicubic_zoom.jpg" src="assets/fox/bicubic.jpg" alt="Bicubic 2x upscale of the 512px decode" loading="lazy"><div class="l"><b>Bicubic ×2</b>the 512px decode, resized</div></div>
-    <div class="c"><img data-full="assets/fox/latent.jpg" data-zoom="assets/fox/latent_zoom.jpg" src="assets/fox/latent.jpg" alt="Latent upsampler output" loading="lazy"><div class="l"><b>Latent upsampler</b>crispest fur, but shifts content</div></div>
-    <div class="c"><img data-full="assets/fox/head.jpg" data-zoom="assets/fox/head_zoom.jpg" src="assets/fox/head.jpg" alt="Decoder head output" loading="lazy"><div class="l"><b>Decoder head</b>sharper, same content</div></div>
-  </div>
-  <figcaption><b>The same diffusion latent, decoded three ways.</b> Switch to the centre crop to see the
-  difference: the latent upsampler draws the crispest whiskers, and the decoder head sits closer to the
-  bicubic anchor with faint artifacts on the finest strands. Its advantage is not visible here &mdash; it is
-  in the table below.</figcaption>
-</figure>
-
-<figure>
-  <svg id="latchart" class="chart" viewBox="0 0 700 250" style="width:100%;height:auto" role="img"
-       aria-label="Latency breakdown: diffusion dominates, the 1024 head adds 58 ms"></svg>
-  <figcaption><b>Where the time goes</b>, one image, batch 1, 20 steps, median of 30 runs after 5 warm-up, one
-  RTX PRO 6000. The diffusion transformer is 73% of the 512px pipeline. The decoder head replaces the
-  28.5 ms decode with 86.2 ms, taking the total from 817 to 874 ms: <b>+7.1% for four times the pixels</b>.</figcaption>
-</figure>
-
-<div class="tbl"><table>
-<thead><tr><th>Decode</th><th>GenEval</th><th>DPG</th><th>PRISM</th><th>CVTG</th><th>FID &darr;</th><th>CLIP</th><th>ImageReward</th><th>ImgEdit</th><th>GEdit</th><th>ms</th></tr></thead>
-<tbody>
-<tr><td>512px</td><td>0.913</td><td>80.17</td><td class="dim">&mdash;</td><td class="dim">&mdash;</td><td>14.70</td><td>31.76</td><td>0.738</td><td>3.11</td><td>6.55</td><td>817</td></tr>
-<tr><td>1024 · latent upsampler</td><td>0.900</td><td>79.59</td><td>5.21</td><td>0.0449</td><td class="hit">14.07</td><td>31.75</td><td>0.698</td><td>3.02</td><td>6.49</td><td>893</td></tr>
-<tr class="hl"><td><b>1024 · decoder head</b></td><td>0.911</td><td>80.31</td><td><b>5.43</b></td><td>0.0456</td><td>14.22</td><td>31.79</td><td>0.734</td><td>3.11</td><td>6.52</td><td>874</td></tr>
-</tbody></table></div>
-<figcaption>All nine benchmarks on one model, one protocol, three decoders. <b>The decoder head is
-content-neutral</b>: GenEval, DPG and ImgEdit are unchanged, and ImageReward moves by 0.004. <b>The latent
-upsampler is not</b>: because it rewrites the latent, it shifts the picture &mdash; GenEval &minus;0.013, DPG
-&minus;0.6, ImgEdit &minus;0.09, ImageReward &minus;0.04. It wins FID by 0.15, and the VLM-judged PRISM
-prefers the head, 5.43 to 5.21. We ship the head.</figcaption>
-</div>
-
-<div class="wrap">
-<h2 id="merge"><span class="num">06</span>Model merging</h2>
-<p>Every RL run in the project starts from the same supervised model, so they all sit in one
-linearly-connected region of weight space and can simply be averaged. We trained three RL variants, each
-good at a different target, and took their uniform average.</p>
-<div class="tbl"><table>
-<thead><tr><th>Model</th><th>GenEval</th><th>DPG</th><th>ImageReward</th><th>GEdit</th></tr></thead>
-<tbody>
-<tr><td>A &middot; task-vector sum of two RL runs, aimed at DPG</td><td>0.929</td><td>81.91</td><td>0.848</td><td class="dim">&mdash;</td></tr>
-<tr><td>B &middot; RL with an ImageReward quality reward</td><td>0.873</td><td>81.26</td><td>0.917</td><td>6.450</td></tr>
-<tr><td>C &middot; RL jointly with a reward-gradient loss</td><td>0.887</td><td>80.15</td><td>0.884</td><td>6.710</td></tr>
-<tr class="hl"><td><b>Uniform average of A, B, C</b></td><td>0.902</td><td class="hit"><b>82.19</b></td><td class="hit"><b>0.957</b></td><td class="hit"><b>6.740</b></td></tr>
-</tbody></table></div>
-<figcaption>cfg 1.5. <b>The average beats every one of its members</b> on DPG, ImageReward and GEdit at the same
-time &mdash; it is not an interpolation between them but above all three. It does not win GenEval, where
-member A is stronger. Across seven merges, the average beat both of its endpoints 7 times out of 7.</figcaption>
-
-<p>The limit matters as much as the effect. Across those seven merges the gain above the straight line
-between endpoints averaged about <b>+0.07</b> on a 0&ndash;1 scale. That is a real and repeatable free lunch,
-and far too small to cover a target the members miss by 0.15. <b>Merging consolidates strengths; it does
-not create one that no member has.</b></p>
-
-<h2 id="recipe"><span class="num">07</span>The inference recipe</h2>
-<p>Two settings nobody had questioned turned out to matter more than most of the training runs.</p>
-
-<h3>Fewer solver steps are better</h3>
-<p>The evaluation protocol used 20 DPM-Solver++ steps because the first script did. Sweeping it, on a
-metric we built for human subjects (section 09), showed quality peaking at <b>8&ndash;16 steps</b>. All four of
-those settings are significantly better than 20, paired over 152 matched images with identical noise; 28
-and 40 steps are not.</p>
-<figure>
-  <svg id="stepchart" class="chart" viewBox="0 0 700 290" style="width:100%;height:auto" role="img"
-       aria-label="Paired quality gain over 20 steps peaks at 8 steps"></svg>
-  <figcaption><b>Paired gain over the 20-step protocol</b>, with ±1 standard error. Filled markers are
-  significant at p&nbsp;&lt;&nbsp;0.05. Twelve steps is <b>+0.100 (t&nbsp;=&nbsp;+2.95) for 40% less diffusion
-  compute</b> &mdash; a quality improvement and a speedup at once, and the default we ship.</figcaption>
-</figure>
-
-<h3>Guidance trades alignment for people</h3>
-<p>Classifier-free guidance is the strongest single lever on GenEval, DPG and ImageReward. It has a cost
-that no alignment benchmark sees.</p>
-<figure>
-  <svg id="cfgchart" class="chart" viewBox="0 0 700 280" style="width:100%;height:auto" role="img"
-       aria-label="Human quality against guidance scale"></svg>
-  <figcaption><b>Paired change in human quality against cfg 1.5</b>, ±1 SE. On the RL model, cfg 3.0 is neutral
-  overall but costs realism (&minus;0.158, t&nbsp;=&nbsp;&minus;2.81); cfg 4.5 with interval guidance is significantly worse outright (&minus;0.171, t&nbsp;=&nbsp;&minus;3.36). On the
-  merged model the effect is stronger: cfg 3.0 costs <b>&minus;0.165 (t&nbsp;=&nbsp;&minus;3.48)</b> overall and
-  &minus;0.303 on realism &mdash; while scoring higher on every alignment benchmark in section 03. We ship cfg 1.5.</figcaption>
-</figure>
-
-<p>A third lever is free: <b>interval guidance</b>, applying guidance only for the early, high-noise part
-of sampling. On the RL model at cfg 3.0 it cuts FID from 15.40 to 14.37 while GenEval moves 0.013 &mdash;
-inside the 0.019 noise floor &mdash; and DPG rises slightly.</p>
-
-<div class="note teal"><span class="lbl">A mistake worth naming</span>
-<p>We once recommended cfg 3.0 on the strength of the alignment benchmarks, before its effect on human
-subjects had been measured. The measurement reversed it. A setting whose cost has not been measured is not
-a recommendation; it is a guess with a number attached.</p></div>
-</div>
-
-<div class="wrap">
-<h2 id="editing"><span class="num">08</span>Editing</h2>
-<p>Eleven edit types from ImgEdit and GEdit. Drag the slider to compare source and result. <b>These are not
-selected</b>: seed 0, one sample each, exactly the predictions the benchmarks scored.</p>
-</div>
-<div class="wide">
-<div class="edgrid">
-  <div>
-    <div class="ba" id="ba" aria-label="Before and after comparison, drag to compare">
-      <img id="ba-src" alt="Source image">
-      <img id="ba-out" class="after" alt="Edited image">
-      <span class="tag l">source</span><span class="tag r">edited</span>
-      <div class="handle" id="ba-h"></div>
+</svg>
     </div>
-    <p id="ba-inst" style="font-size:15px;margin:14px 2px 0;color:var(--muted)"></p>
+    <p class="arch-detail" id="arch-detail" aria-live="polite">Click or tap a block to see what it does.</p>
   </div>
-  <div class="edlist" id="edlist"></div>
-</div>
-</div>
-<div class="wrap">
-<figcaption>Mobile-O v2 after GRPO, cfg 1.5, instruction null. Two things to look for: text edits
-("32" → "33") keep the plaque's material and lighting; and <i>global</i> edits (background, style) succeed more
-often than tightly local ones, because &mdash; section 10 &mdash; the model re-renders unedited regions rather
-than copying them.</figcaption>
-</div>
-
-<div class="wrap">
-<h2 id="people"><span class="num">09</span>People and faces</h2>
-<p>Sixteen prompts built to be hard for faces &mdash; wrinkles, freckles, open mouths, glasses reflecting
-a window, hair across the face, two faces cheek to cheek, deep shadow. <b>All four seeds are shown for every
-prompt</b>; switch between them. Nothing here is selected.</p>
-</div>
-<div class="wide">
-<div class="ctrls" role="group" aria-label="Seed" id="seedchips">
-  <button class="chip" data-seed="0" aria-pressed="true">Seed 0</button>
-  <button class="chip" data-seed="1" aria-pressed="false">Seed 1</button>
-  <button class="chip" data-seed="2" aria-pressed="false">Seed 2</button>
-  <button class="chip" data-seed="3" aria-pressed="false">Seed 3</button>
-</div>
-<div class="gal" id="facegal"></div>
-</div>
-<div class="wrap">
-<figcaption>The human-tuned merged model &mdash; a 50/50 average of the RL model and an RL model trained with a
-VQAScore quality reward &mdash; at cfg 1.5, 12 steps. 512×512.</figcaption>
-
-<h3>We needed a metric, and built one badly twice</h3>
-<p>There was no benchmark for anatomical correctness, so we built <b>HumanBench</b>: a local Qwen2.5-VL-72B
-judge scoring six independent axes 1&ndash;5 &mdash; hands, held objects, mouth, face, body, realism &mdash;
-on 38 prompts × 4 samples, with every axis allowed to return "not visible" rather than guess.</p>
-<p>The first version <b>scored real photographs as worse than our generations</b>: hands 2.946 and 51.2%
-defective for real photos, against 2.798 and 60.8% for ours. It had conflated "this hand is small, blurry or
-occluded" with "this hand is anatomically impossible", and photographs are full of the former. It was
-measuring hand <i>size</i>. The second version gated each axis on whether the feature was large enough to
-judge &mdash; and still failed all three of its pre-registered checks.</p>
-<p>What survived is narrower and more useful: <b>HumanBench is paired-only.</b> Noise is seeded from a hash
-of the prompt id, so an image is the same prompt and the same latent in every run, and two settings differ
-only by the thing under test. A paired test over 152 matched images resolves gaps that comparing two means
-cannot. Every human-quality number in this report is a paired difference.</p>
-
-<div class="note"><span class="lbl">The judge corrected us</span>
-<p>From contact sheets, we were sure the dominant failure was <b>hands in contact</b> &mdash; fused fingers in
-handshakes. The judge disagreed. Those sheets had been generated at cfg 4.5; at the shipping cfg 1.5 the
-defect is different &mdash; <b>held-object geometry</b>: mugs with two handles, tools with two heads, a stem
-merging into a hand. The <code>objects</code> axis exists because the metric was right and we were not.</p></div>
-
-<h3>Faces are at the real-photograph ceiling</h3>
-<p>An absolute face score only means something against real photographs. So we scored the <b>real input
-photographs</b> of GEdit's human-retouching subset through the identical rubric and judge &mdash; single
-image, no caption, never told they were generated &mdash; and paired our edits of those same photographs
-against them.</p>
-<div class="tbl"><table>
-<thead><tr><th>Face axis, 1&ndash;5</th><th>score</th><th>vs. real</th><th>t</th><th>verdict</th></tr></thead>
-<tbody>
-<tr><td><b>Real photographs</b></td><td><b>4.956</b></td><td>&mdash;</td><td>&mdash;</td><td class="dim">ceiling</td></tr>
-<tr><td>Edit with SDEdit initialization (strength 0.5)</td><td>4.866</td><td>&minus;0.090</td><td>&minus;1.35</td><td class="hit">indistinguishable</td></tr>
-<tr><td>Human-tuned merged model</td><td>4.797</td><td>&minus;0.103</td><td>&minus;1.41</td><td class="hit">indistinguishable</td></tr>
-<tr><td>RL model</td><td>4.765</td><td>&minus;0.191</td><td>&minus;1.98</td><td>just below</td></tr>
-</tbody></table></div>
-<figcaption>Paired over the same 70 photographs, scored identically. On facial anatomy, two of our settings are
-<b>statistically indistinguishable from real photographs</b>.</figcaption>
-
-<p>Across all 28 generation settings we scored, the face axis spans only 4.645&ndash;4.887 against a real
-ceiling of 4.956. Faces are done. The gap that remains is elsewhere:</p>
-<figure>
-  <svg id="axischart" class="chart" viewBox="0 0 700 230" style="width:100%;height:auto" role="img"
-       aria-label="Gap to real photographs by axis"></svg>
-  <figcaption><b>Distance below the real-photograph ceiling</b>, same 70 photographs, RL model; mouth and held objects are omitted because too few images showed them. Face is closest;
-  realism is furthest. Hands are also where the rate gap is starkest: 11&ndash;17% of our hands are judged
-  defective, against <b>0.0%</b> for real photographs.</figcaption>
+  <figcaption>The Mobile-O v2 pipeline. Blocks filled in gray are frozen, and blocks outlined in blue are trained.</figcaption>
 </figure>
 
-<h3>When a specialist metric and a distribution disagree</h3>
-<p>We also ran <a href="https://arxiv.org/html/2406.17100v2">FaceScore</a>, a reward model fine-tuned on pairs of
-high-quality versus degraded faces, over 5,000 FFHQ caption prompts with identical noise per prompt. The official
-implementation reproduces the paper's own published example to four decimals.</p>
-<figure>
-  <svg id="disagreechart" class="chart" viewBox="0 0 700 320" style="width:100%;height:auto" role="img"
-       aria-label="FaceScore and face-region FID rank the same models in opposite orders"></svg>
-  <figcaption><b>Each line is one model.</b> FaceScore (left, higher is better) prefers the three merged models by a
-  wide margin (t&nbsp;&gt;&nbsp;+34 each). Face-region FID against real FFHQ faces (right, lower is better) prefers the
-  RL model &mdash; and ranks the merges <i>further</i> from real in the same order as their FaceScore gains. And
-  every one of our models <b>outscores real FFHQ photographs</b> on FaceScore (4.97).</figcaption>
+<p><b>MiniCPM-V-4.6 reads the input.</b> It reads the prompt, and when editing it also looks at the source image. We use its last hidden layer as the description of what to draw. It stays frozen, so it keeps all of its ability to understand images.</p>
+<p><b>The connector translates.</b> A small network with 8.8M parameters turns that description into the form the diffusion model expects.</p>
+<p><b>The diffusion transformer draws.</b> SANA-600M starts from random noise and removes it step by step until a small 16×16 latent image is left. We fine-tune all of it.</p>
+<p><b>The decoder makes the pixels.</b> The frozen DC-AE decoder turns the 16×16 latent into a 512×512 image.</p>
+<p>The token count shaped most of the design. A 512×512 image becomes a 16×16 latent, which the transformer processes as 256 tokens. The transformer's cost grows with the number of tokens, and on a phone that decides how long you wait, so every improvement in this post had to work without adding tokens.</p>
+
+<h2 id="results">Results</h2>
+<p>We ran v1 and v2 through the same evaluation code, both with 20 sampler steps and guidance 1.5. v2 is ahead on every benchmark we ran, and its biggest GenEval gains are in the three categories where v1 was weakest: counting, putting objects in the right position, and giving each object the right color.</p>
+
+<figure id="fig-geneval">
+  <div class="chart" id="chart-geneval"><svg class="ch" viewBox="0 0 660 262" role="img" aria-label="GenEval by category: v2 improves on v1 in every category, most in counting, position and color attribution"></svg><div class="tip" hidden></div></div>
+  <div class="legend"><span><i class="dot" style="background:var(--n1)"></i>Mobile-O v1</span><span><i class="dot" style="background:var(--s1)"></i>Mobile-O v2</span></div>
+  <figcaption>GenEval scores by category, as the share of images the benchmark marks correct. "Color attribution" checks that each object gets the color the prompt gave it, for example a red cup next to a blue book.</figcaption>
 </figure>
-<p>This is not a broken metric; it measures what it was trained to measure. FaceScore learned to separate clean
-faces from degraded ones, so it rewards the smooth, well-lit, idealized look that quality-reward RL pushes toward.
-Real photographs have grain, blur and awkward light, and score lower for it. The honest statement is narrow: the
-merged models make faces <i>cleaner</i>; the RL model makes faces <i>closer to real photographs</i>. Which one you
-want is a product decision, not a measurement.</p>
-</div>
 
-<div class="wrap">
-<h2 id="wall"><span class="num">10</span>The editing wall is architectural</h2>
-<p>Editing is the target we have not reached, and three separate attempts to fix it with data and losses all
-returned nothing: pixel-aligned training pairs, a foreground mask, and a source-consistency loss. Three nulls
-in a row usually means the hypothesis is wrong, so instead of trying a fourth we measured.</p>
-<p>The probe: at pure noise, the model's one-step prediction reflects only what its <i>conditioning</i>
-knows. How well does it reproduce the regions an edit is supposed to leave alone?</p>
-<div class="tbl"><table>
-<thead><tr><th>What the model is given</th><th>reconstruction error &darr;</th><th>variance explained</th></tr></thead>
-<tbody>
-<tr><td>the real source image</td><td>0.469</td><td>0.55</td></tr>
-<tr><td>an unrelated source image</td><td>1.043</td><td>&mdash;</td></tr>
-<tr class="hl"><td><b>no model &mdash; just copy the source latent</b></td><td><b>0.178</b></td><td><b>0.83</b></td></tr>
-</tbody></table></div>
-<figcaption>128 held-out, pixel-aligned editing pairs. <b>The model is 2.64× worse than a plain copy</b>
-(95% CI 2.24&ndash;3.08); only 12&ndash;14% of individual pairs beat it.</figcaption>
+<p>The images themselves also look better. v2's FID fell from 23.3 to 13.5, and it beats both sizes of v1 on every image-quality measure we ran.</p>
 
-<p>The cause is structural. <b>The source image reaches the diffusion transformer only as the vision-language
-model's semantic tokens.</b> The pixels are never there, so the model re-renders the background from a
-description of it &mdash; which is exactly why aligned data, masking and consistency losses did nothing: none of
-them can supply information the input never carried.</p>
-<p>The field has converged on the same answer. <a href="https://huggingface.co/Qwen/Qwen-Image-Edit">Qwen-Image-Edit</a>
-routes the source through <b>both</b> its vision-language model for semantics <b>and</b> the VAE encoder for
-appearance. We only had the first half. The usual way to add the second &mdash; appending the source as extra
-tokens &mdash; doubles our 256-token budget. So the experiment in flight adds it without adding tokens: the
-source's VAE latent is patch-embedded with the transformer's own patch size and <b>added</b> at block 0, behind a
-learned scalar gate. Latency and the generation path are unchanged. It is the dashed path in the figure in
-section 01.</p>
-
-<h3>The experiment that had been measuring nothing</h3>
-<p>This had been attempted before and read as a null. It was not a null; the channel was dead. It was built as
-<code>tanh(gate) × proj(z_source)</code> with <b>both</b> factors initialized to zero &mdash; a fixed point with
-no gradient:</p>
-<pre style="border-radius:12px"><code>∂/∂gate = sech²(gate) · proj(z)  =  0     because proj = 0
-∂/∂proj = tanh(gate) · z         =  0     because gate = 0</code></pre>
-<p style="margin-top:18px">Zeroing <i>one</i> factor makes step 0 identical to the starting model, which is the
-point. Zeroing both creates a saddle the optimizer cannot leave. The run trained 487 steps with the gate
-printing exactly <code>+0.0000</code>. The danger is not the bug: <b>a dead channel scores identically to its own
-control</b>, so a 31-hour run would have finished and been written up as "the idea does not work".</p>
-<p>The fix seeds the projection from the transformer's own patch-embedding weights, keeps the zero on the
-scalar gate alone, and <b>crashes the run</b> if the gate is still exactly zero after 200 batches.</p>
-<figure>
-  <svg id="gatechart" class="chart" viewBox="0 0 700 260" style="width:100%;height:auto" role="img"
-       aria-label="Gate value climbing steadily from zero"></svg>
-  <figcaption><b>The channel is alive.</b> tanh(gate) over the run in flight: it leaves zero by batch 200 and
-  climbs steadily &mdash; the transformer is leaning on the source latent harder as training proceeds. A channel
-  with nothing to offer would stay pinned at zero, which is exactly what the broken version did. This proves the
-  channel is <i>used</i>, not that preservation <i>improved</i>; that is decided when training finishes.</figcaption>
+<figure id="fig-quality">
+  <div class="tw"><table class="plain">
+    <thead><tr><th>Measure</th><th>v1, 0.5B</th><th>v1, 1.5B</th><th>v2</th></tr></thead>
+    <tbody>
+      <tr><td>FID ↓</td><td>23.26</td><td>19.51</td><td class="us">13.51</td></tr>
+      <tr><td>CLIP score ↑</td><td>30.78</td><td>31.46</td><td class="us">31.78</td></tr>
+      <tr><td>ImageReward ↑</td><td>0.396</td><td>0.524</td><td class="us">0.763</td></tr>
+    </tbody>
+  </table></div>
+  <figcaption>Image quality for the two sizes of Mobile-O v1 and for v2, on MJHQ-30K, a set of 30,000 high-quality images and their prompts. FID compares our images with that set, so lower is better. CLIP score measures how well each image matches its prompt, and ImageReward is a model trained to predict which images people prefer.</figcaption>
 </figure>
+
+<h2 id="examples">Examples</h2>
+<h3>Generating images</h3>
+<p>Figure 6 has all 20 prompts from our comparison and every image both models made for them, four per prompt from each model. The last five prompts are long ones from DPG-Bench.</p>
+
+<figure id="fig-gen">
+  <div class="panel" id="gen">
+    <div class="strip" role="group" aria-label="Choose a prompt"></div>
+    <div class="pair">
+      <div>
+        <div class="colhead">Mobile-O v1</div>
+        <img class="main-img" alt="" width="512" height="512">
+        <div class="seeds" role="group" aria-label="Mobile-O v1 images"></div>
+      </div>
+      <div>
+        <div class="colhead">Mobile-O v2</div>
+        <img class="main-img" alt="" width="512" height="512">
+        <div class="seeds" role="group" aria-label="Mobile-O v2 images"></div>
+      </div>
+    </div>
+    <p class="prompt-text"></p>
+  </div>
+  <figcaption>Pick a prompt from the strip, then click a small image to switch. A blue dot marks the image we liked best from each model, and clicking a large image opens it at full size.<label for="sn-noise" class="sn-ref"></label><input type="checkbox" id="sn-noise" class="sn-toggle"><span class="sidenote">The two models draw their starting noise differently, so the same seed number gives v1 and v2 different noise. Compare each model's four images as a group.</span></figcaption>
+</figure>
+
+<h3>Editing images</h3>
+<p>v2 edits an image from a written instruction. Figure 7 shows eleven kinds of edits from the ImgEdit and GEdit benchmarks, next to v1's result for the same instruction. We didn't pick these; each one is the first image the model made.</p>
+
+<figure id="fig-edit">
+  <div class="panel" id="edit">
+    <div class="ctl"><span>Edit</span><div class="chips" data-role="edits" role="group" aria-label="Edit"></div></div>
+    <div class="ctl"><span>Model</span><div class="chips" data-role="model" role="group" aria-label="Model"></div></div>
+    <div class="cmp-wrap"><div class="cmp" tabindex="0" role="slider" aria-label="Drag to compare" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <img class="a" alt=""><img class="b" alt=""><span class="lab l"></span><span class="lab r"></span><span class="bar"></span><span class="knob"></span>
+    </div></div>
+    <p class="prompt-text" data-role="instruction"></p>
+  </div>
+  <figcaption>Drag the divider to compare the source image with the edit, and switch between v2 and v1. v2 follows most of these instructions, like swapping the dragon for a rubber duck, moving the boot to a beach or changing "32" to "33". v1 often leaves the image almost unchanged.</figcaption>
+</figure>
+
+<h2 id="training">Training</h2>
+<p>We trained v2 in two stages. Supervised fine-tuning teaches the model from examples, and reinforcement learning then improves it using rewards.</p>
+
+<h3>Learning from examples</h3>
+<p>We first pretrain the connector and the diffusion transformer on text-image pairs. We then fine-tune them on image generation, then on editing, and finally on an even mix of the two, so that one model learns both tasks without either one crowding out the other.</p>
+
+<h3>Learning from rewards</h3>
+<p>For the second stage we use GRPO, adapted to diffusion models as in <a href="https://arxiv.org/abs/2505.05470">Flow-GRPO</a>. For each prompt the model makes a group of 12 images, and we score each one. Training then moves the model toward the images that scored above their group's average. The VLM stays frozen, so each prompt only has to be read once per group.</p>
+<p>Generation and editing prompts share the same training run, and each image gets the rewards that fit its task.</p>
+<ul>
+  <li><b>Objects.</b> A detector checks for the right objects with the right counts, colors and positions, and gives partial credit.</li>
+  <li><b>The whole prompt.</b> A frozen Qwen3-VL-8B scores how likely the full prompt is, given the image.<label for="sn-rib" class="sn-ref"></label><input type="checkbox" id="sn-rib" class="sn-toggle"><span class="sidenote">This reward comes from "Read It Back: Pretrained MLLMs Are Zero-Shot Reward Models for Text-to-Image Generation" (arXiv 2607.11886).</span> This works for long, detailed prompts that the detector can't check.</li>
+  <li><b>Edits.</b> A judge model scores whether an edit followed the instruction, kept the rest of the image consistent, and looks good.</li>
+  <li><b>Text.</b> An OCR model reads the words in images whose prompts ask for text.</li>
+</ul>
+<p>These rewards come on very different scales. We standardize each one within its own group of samples before adding them up, so that no single reward dominates. After 500 steps of this training, GenEval rose from 0.84 to 0.91, DPG-Bench from 79.1 to 80.7 and ImageReward from 0.65 to 0.76. Both editing benchmarks went up as well, ImgEdit from 2.99 to 3.09 and GEdit from 6.38 to 6.52.<label for="sn-judge" class="sn-ref"></label><input type="checkbox" id="sn-judge" class="sn-toggle"><span class="sidenote">Our editing scores come from a local Qwen2.5-VL-72B judge, so they aren't comparable with leaderboard numbers judged by GPT-4o.</span></p>
+
+<h2 id="settings">Sampler settings</h2>
+<p>Two settings control how an image is sampled: the number of steps and the guidance scale. We chose both by looking at people, since problems with skin and faces are the easiest to notice.</p>
+<p>To compare settings fairly, we built a small benchmark we call HumanBench, with 38 prompts that show people and four images for each. A vision-language model (Qwen2.5-VL-72B) scores every image from 1 to 5 for hands, faces, bodies and realism. Every setting uses the same prompts and the same starting noise, so two images differ only in the setting.</p>
+
+<h3>Why 12 steps?</h3>
+<p>We expected more steps to give better images, but for people that wasn't the case. HumanBench scores peaked between 8 and 16 steps, and at 12 steps people scored higher than at 20 while each image needed 40% less work. With more steps, skin starts to look harsh and wrinkles get deeper; try 40 steps in Figure 8.</p>
+
+<figure id="fig-steps">
+  <div class="panel" id="steps">
+    <div class="ctl"><span>Prompt</span><div class="chips" data-role="prompts" role="group" aria-label="Prompt"></div></div>
+    <div class="cmp-wrap"><div class="cmp" tabindex="0" role="slider" aria-label="Drag to compare" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <img class="a" alt=""><img class="b" alt=""><span class="lab l"></span><span class="lab r"></span><span class="bar"></span><span class="knob"></span>
+    </div></div>
+    <div class="chart"><svg class="ch" viewBox="0 0 620 210" role="img" aria-label="Average HumanBench score change compared with 20 steps, for 6 to 40 steps"></svg><div class="tip" hidden></div></div>
+    <div class="ctl" style="margin-top:6px"><span>Right side</span><div class="chips" data-role="steps" role="group" aria-label="Step count"></div></div>
+  </div>
+  <figcaption>Left, 20 steps. Right, the step count you pick, on the chart or below it. Both images use the same prompt and starting noise. The chart shows how the average HumanBench score changed compared with 20 steps, over 152 images.</figcaption>
+</figure>
+
+<h3>Why guidance 1.5?</h3>
+<p>Guidance<label for="sn-cfg" class="sn-ref"></label><input type="checkbox" id="sn-cfg" class="sn-toggle"><span class="sidenote">At each step the model makes two predictions, one with the prompt and one without, and the guidance scale sets how far to push the result toward the prompt. A scale of 1 means no guidance.</span> sets how strongly the model sticks to the prompt. SANA's own default is 4.5, but in our tests higher guidance pushed skin toward red and exaggerated freckles and wrinkles. Going from 1.5 to 3.0 lowered the HumanBench realism score by 0.16 on its 1-to-5 scale, while 2.0 made almost no difference, so we use 1.5.</p>
+
+<figure id="fig-cfg">
+  <div class="panel" id="cfg">
+    <div class="ctl"><span>Prompt</span><div class="chips" data-role="prompts" role="group" aria-label="Prompt"></div></div>
+    <div class="ctl"><span>Right side</span><div class="chips" data-role="scale" role="group" aria-label="Guidance scale"></div></div>
+    <div class="cmp-wrap"><div class="cmp" tabindex="0" role="slider" aria-label="Drag to compare" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <img class="a" alt=""><img class="b" alt=""><span class="lab l"></span><span class="lab r"></span><span class="bar"></span><span class="knob"></span>
+    </div></div>
+    <p class="note-line" data-role="readout" aria-live="polite"></p>
+  </div>
+  <figcaption>Left, guidance 1.5. Right, the value you pick. Both images use the same prompt, starting noise and number of steps (20).</figcaption>
+</figure>
+
+<h2 id="hires">1024×1024 output</h2>
+<p>To generate a 1024×1024 image directly, the diffusion model would need a 32×32 latent, which means four times as many tokens and roughly four times the work. So we add the extra pixels afterwards. A small network, the 1024px head (106.5M parameters), reads the decoder's last internal features and adds fine detail on top of a plain 2× upscale of the 512px image.</p>
+<p>The diffusion model doesn't change, and neither does the content of the image, so our benchmark scores stay the same at 1024px. Figure 10 shows what it costs in time.</p>
+
+<figure id="fig-lat">
+  <div class="chart" id="chart-lat"><svg class="ch" viewBox="0 0 660 128" role="img" aria-label="Time per image: 817 ms at 512 by 512 and 874 ms at 1024 by 1024"></svg><div class="tip" hidden></div></div>
+  <div class="legend"><span><i style="background:var(--n2)"></i>Reading the prompt</span><span><i style="background:var(--n1)"></i>Diffusion, 20 steps</span><span><i style="background:var(--n3)"></i>Decoding to 512px</span><span><i style="background:var(--s1)"></i>1024px head</span></div>
+  <figcaption>Time to make one image with 20 steps on one desktop GPU. The head replaces the 29 ms decode with an 86 ms step, so a 1024px image takes 874 ms instead of 817 ms. That's 7% more time for four times the pixels.</figcaption>
+</figure>
+
+<h2 id="faces">Faces</h2>
+<p>Figure 11 shows 16 portrait prompts, several of them written to be hard: deep wrinkles, freckles, glasses reflecting a window, hair blowing across a face, two faces cheek to cheek and a baby on a parent's shoulder. We show every image, four per prompt, made with 12 steps and guidance 1.5.</p>
+
+<figure id="fig-faces">
+  <div class="panel" id="faces-viewer">
+    <div class="strip" role="group" aria-label="Choose a prompt"></div>
+    <div class="four"></div>
+    <p class="prompt-text"></p>
+  </div>
+  <figcaption>All four images for each prompt, with nothing picked. Click an image to see it larger.</figcaption>
+</figure>
+
+<h2 id="cite">Citation</h2>
+<p>Mobile-O v2 builds on Mobile-O. If you find this work useful, please cite:</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code>@article{shaker2026mobileo,
+  title   = {Mobile-O: Unified Multimodal Understanding
+             and Generation on Mobile Device},
+  author  = {Shaker, Abdelrahman and Heakl, Ahmed and
+             Muhammad, Jaseel and Thawkar, Ritesh and
+             Thawakar, Omkar and Li, Senmao and
+             Cholakkal, Hisham and Reid, Ian and
+             Xing, Eric P. and Khan, Salman and
+             Khan, Fahad Shahbaz},
+  journal = {arXiv preprint arXiv:2602.20161},
+  year    = {2026}
+}</code></pre></div>
+
+</article>
 </div>
+</main>
 
-<div class="wrap">
-<h2 id="use"><span class="num">11</span>Use it</h2>
-<p>Everything downloads on first run &mdash; the trained head from Hugging Face, and the frozen vision-language
-model and autoencoder from their own repositories.</p>
-<div class="tabs" role="tablist">
-  <button class="tab" role="tab" aria-selected="true" data-t="t1">Install</button>
-  <button class="tab" role="tab" aria-selected="false" data-t="t2">Generate</button>
-  <button class="tab" role="tab" aria-selected="false" data-t="t3">Edit</button>
-  <button class="tab" role="tab" aria-selected="false" data-t="t4">1024px</button>
-</div>
-<div class="tabpanel" id="t1" role="tabpanel"><pre><code>git clone https://github.com/ahmedheakl/mobileov2-minicpm
-cd mobileov2-minicpm
-pip install -r requirements.txt
-
-<span class="c"># transformers &gt;= 5 is required: MiniCPM-V-4.6 is a native</span>
-<span class="c"># transformers model, and the import fails on 4.x</span></code></pre></div>
-<div class="tabpanel" id="t2" role="tabpanel" hidden><pre><code>python infer.py --prompt "a red fox in a snowy meadow at dawn" --out out/fox.png
-
-<span class="c"># batch prompts: the first call pays ~2 s of CUDA warm-up</span>
-python infer.py --prompt "a cat" "a dog" "a lighthouse" --out out/</code></pre></div>
-<div class="tabpanel" id="t3" role="tabpanel" hidden><pre><code>python infer.py --image photo.jpg --prompt "make it snow" --out out/edit.png</code></pre></div>
-<div class="tabpanel" id="t4" role="tabpanel" hidden><pre><code>python infer.py --size 1024 --prompt "a lighthouse at dusk" --out out/big.png
-
-<span class="c"># the 426 MB decoder head downloads once; works for editing too</span>
-python infer.py --size 1024 --image photo.jpg --prompt "make it autumn" --out out/big_edit.png</code></pre></div>
-<p style="margin-top:22px">Defaults are <b>12 steps at cfg 1.5</b>. Both look low and neither is an oversight
-&mdash; section 07 has the argument for each. Raising either improves a benchmark column and makes the pictures
-worse.</p>
-
-<h2 id="open"><span class="num">12</span>What is still open</h2>
-<p><b>DPG &ge; 85.</b> The record is 84.61 across every setting we measured, and stock SANA-600M reaches 84.04
-without any of our training, so the last point is not obviously ours to win. Two confident explanations of the
-ceiling &mdash; first that it saturates, then that the gains were constant and 85 was reachable &mdash; were both
-wrong, and both were curve-fitting inside a 0.78-point noise floor.</p>
-<p><b>FID &le; 8 with GenEval &ge; 0.9.</b> The architecture reaches FID 7.26 unconditioned by our training, and a
-flow-matching-only run of ours hit 5.96 &mdash; so the target is inside the envelope, and what costs it is the
-conditioning path and RL. Next is <a href="https://arxiv.org/pdf/2410.06940">representation alignment</a>: a
-training-only loss that aligns an early transformer block with DINOv2 features. It fits unusually cleanly &mdash;
-our 16×16 latent is 256 tokens and DINOv2 ViT-B/14 at 224px is exactly 256 patch tokens &mdash; and it adds no
-tokens, parameters or latency at inference.</p>
-<p><b>ImgEdit &ge; 3.5</b> waits on the source-latent experiment in section 10.</p>
-
-<h3>Six things we would tell ourselves at the start</h3>
-<ol>
-<li><b>Score real data through your own metric.</b> Two rubrics and one published metric all ranked real
-photographs below our generations. Every one was caught that way, and none would have been caught by looking.</li>
-<li><b>Anything that is a no-op at initialization must be shown to leave the no-op.</b> A dead channel is
-indistinguishable from a refuted idea.</li>
-<li><b>Pair everything.</b> Seeding noise on the prompt turns a comparison of two noisy means into a paired test
-that resolves differences an order of magnitude smaller.</li>
-<li><b>Know the noise floor before you see a trend.</b> GenEval under 0.019, DPG under 0.78, ImgEdit under 0.05
-&mdash; several stories here were fitted to movement inside those bands.</li>
-<li><b>Sweep the defaults nobody questions.</b> The best quality-per-compute result in the project was a default
-argument.</li>
-<li><b>After three nulls, measure instead of iterating.</b> One probe explained all three and moved the work from
-data and losses to architecture.</li>
-</ol>
-</div>
-
-<footer><div class="wrap">
-  <p><b style="color:var(--muted)">Mobile-O v2</b> &middot; technical report, September 2026 &middot;
-  <a href="https://github.com/ahmedheakl/mobileov2-minicpm">code</a> &middot;
-  <a href="https://huggingface.co/ahmedheakl/rand-mobile">weights</a></p>
-  <p>GenEval, DPG-Bench, MJHQ-30K FID/CLIP/ImageReward, PRISM and CVTG use official implementations. ImgEdit and GEdit
-  are judged by a local Qwen2.5-VL-72B and are not comparable to GPT-4o-judged leaderboards. Human-quality numbers are
-  paired differences on identical prompts and noise.</p>
+<footer><div class="in">
+  <p><b style="color:var(--fg-2)">Mobile-O v2</b> · September 2026 · <a href="https://arxiv.org/abs/2602.20161">Mobile-O v1 paper</a></p>
+  <p>GenEval, DPG-Bench and the MJHQ-30K measures (FID, CLIP score, ImageReward) use their official code.</p>
 </div></footer>
 
-<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Image viewer">
-  <button class="x" id="lbx" aria-label="Close">×</button>
-  <button class="nav prev" id="lbp" aria-label="Previous">‹</button>
-  <button class="nav next" id="lbn" aria-label="Next">›</button>
-  <div class="in"><img id="lbimg" alt=""><div class="txt" id="lbtxt"></div></div>
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Image viewer" hidden>
+  <button class="x" id="lb-x" type="button" aria-label="Close">×</button>
+  <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure>
 </div>
+
 <script>
-var GEN=[{"f": "gen_01_portrait", "g": "photo", "cat": "portrait", "p": "A close-up portrait of an elderly fisherman with a weathered face and a short white beard, wearing a bright yellow raincoat. Warm golden hour light rakes across his cheek from the left, leaving the right side in soft shadow. The harbour behind him is thrown far out of focus into blue-grey bokeh."}, {"f": "gen_02_wildlife", "g": "photo", "cat": "animal", "p": "A red fox standing alert in a snow-covered meadow at dawn, its orange fur vivid against the white ground, breath visible in the cold air. Bare birch trunks recede into soft mist behind it. Shot on a telephoto lens with a shallow depth of field."}, {"f": "gen_03_landscape", "g": "scene", "cat": "landscape", "p": "A vast mountain valley at sunrise, layered ridgelines fading from deep blue in the foreground to pale lavender at the horizon. A river of low cloud fills the valley floor, lit orange where the first sunlight strikes it. Snow caps the highest peaks."}, {"f": "gen_04_food", "g": "detail", "cat": "food", "p": "An overhead shot of a rustic wooden table with a bowl of steaming ramen: golden broth, a soft-boiled egg halved to show the runny yolk, sliced pork, spring onion and a sheet of nori. Chopsticks rest on a folded linen napkin beside it. Soft diffused daylight from a window."}, {"f": "gen_05_interior", "g": "scene", "cat": "architecture", "p": "The interior of a modern library atrium, four floors of pale oak shelving curving around an open void, a glass ceiling above flooding the space with daylight. A few readers sit at long tables on the ground floor. Strong clean perspective lines converge toward the far wall."}, {"f": "gen_06_vehicle", "g": "detail", "cat": "vehicle", "p": "A vintage teal convertible parked on a coastal road at dusk, its chrome bumper and polished paintwork reflecting the last pink light of the sky. The ocean stretches out behind a low stone wall. Headlights are on, casting a warm pool on the asphalt."}, {"f": "gen_07_stilllife", "g": "detail", "cat": "still life", "p": "A still life of three glass bottles of different heights on a dark slate surface, backlit so the light refracts through the green, amber and clear glass. A scattering of coffee beans lies in front of them. Deep shadows, single hard light source from behind."}, {"f": "gen_08_fantasy", "g": "scene", "cat": "surreal", "p": "A giant whale drifting through the sky above a quiet seaside town, barnacles on its underside, seabirds circling around it. Villagers in the cobbled square below look up. The light is soft and overcast, and the whale casts a vast shadow across the rooftops."}, {"f": "gen_09_macro", "g": "detail", "cat": "macro", "p": "An extreme macro photograph of a dew-covered dragonfly resting on a blade of grass in early morning. Every facet of its compound eye is sharp, its wings are translucent with visible veins, and droplets of water bead along its body. The background dissolves into green bokeh."}, {"f": "gen_10_cityscape", "g": "scene", "cat": "night", "p": "A rain-slick street in a dense Asian city at night, dozens of neon signs in pink, cyan and red reflected in the puddles. A lone figure with a transparent umbrella walks away from the camera. Steam rises from a grate. Long exposure, wet asphalt, deep saturated colour."}, {"f": "gen_11_underwater", "g": "scene", "cat": "underwater", "p": "An underwater scene of a coral reef in clear turquoise water, shafts of sunlight cutting down from the surface. A school of small yellow fish moves through the frame, and a sea turtle glides past a large brain coral. Fine particles drift in the light beams."}, {"f": "gen_12_action", "g": "photo", "cat": "action", "p": "A skateboarder mid-air over a concrete bowl at a skatepark, board tilted, arms out for balance, caught against a bright blue sky with a few thin clouds. The rim of the bowl and the crowd behind are slightly motion-blurred, the rider sharp."}, {"f": "gen_13_painting", "g": "style", "cat": "style", "p": "An oil painting in thick impasto of a field of sunflowers under a turbulent evening sky, heavy visible brushstrokes, deep yellows and ultramarine blues, in the manner of post-impressionist landscape painting. Canvas texture is visible."}, {"f": "gen_14_text", "g": "style", "cat": "text rendering (hard)", "p": "A weathered wooden shop sign hanging above a cobbled street, with the words \"THE DAILY GRIND\" carved and painted in cream serif letters on a dark green background. A small painted coffee cup sits below the text. Overcast afternoon light."}, {"f": "gen_15_counting", "g": "detail", "cat": "composition", "p": "Three ceramic mugs arranged in a row on a white marble counter: the left one matte black, the middle one glossy red, the right one speckled blue. Behind them stands a small green potted succulent. Even soft studio lighting, clean white background."}, {"f": "gen_16_child_crayons", "g": "long", "cat": "DPG-Bench prompt", "p": "A young child with brown hair, focused intently, sits at a wooden table scattered with colorful crayons and paper. In their small hand is a bright red pencil, with which they are diligently drawing a vibrant blue flower that's taking shape on the white sheet before them. Sunlight filters through a nearby window, casting a warm glow on the child's artwork."}, {"f": "gen_17_truck_porsche", "g": "long", "cat": "DPG-Bench prompt", "p": "A vibrant orange pickup truck parked beside a sleek yellow Porsche 911 on a smooth gray asphalt road. The Porsche's polished surface reflects the sunlight, highlighting its aerodynamic shape and the truck's sturdy, boxy frame. Between the two vehicles, the contrasting sizes and designs are evident, with the pickup's raised suspension towering over the low-profile sports car."}, {"f": "gen_18_train_station", "g": "long", "cat": "DPG-Bench prompt", "p": "A traveler stands in a busy train station, clad in a tan jacket that falls to their mid-thigh, paired with a snugly fitted gray scarf around their neck. On their back, a worn brown backpack suggests a journey in progress. They are intently gazing at the cell phone in their hands, perhaps checking a schedule or reading a message. Before them, a sleek silver train rests on the track, its doors poised to open and welcome passengers to the next leg of their travels."}, {"f": "gen_19_orange_flowers", "g": "long", "cat": "DPG-Bench prompt", "p": "a vibrant plant with star-shaped orange flowers blooming amidst lush green leaves. The plant is potted in a terracotta container that sits on a wooden shelf. Around it, other houseplants contribute to a small indoor garden atmosphere."}, {"f": "gen_20_tree_fence", "g": "long", "cat": "DPG-Bench prompt", "p": "a sturdy tree with a thick trunk and sprawling branches that have intertwined with the metal links of a silver chain-link fence. the fence is partially enveloped by the tree's roots and bark, creating a unique blend of natural and man-made elements. the surrounding area is dotted with green grass and a few scattered wildflowers."}];
-var EDITS=[{"f": "edit_e01_replace", "t": "replace", "p": "Replace the dragon made of pipe cleaners in the image with a bright yellow rubber duck. ", "b": "imgedit"}, {"f": "edit_e02_background", "t": "background", "p": "Change the cloudy and foggy hilltop background to a bright, sunny beach environment.", "b": "imgedit"}, {"f": "edit_e03_motion_change", "t": "motion change", "p": "change the action of the horses to galloping", "b": "gedit"}, {"f": "edit_e04_style_change", "t": "style change", "p": "Switch to a Ghibli style.", "b": "gedit"}, {"f": "edit_e05_text_change", "t": "text change", "p": "Replace the text '32' with '33'", "b": "gedit"}, {"f": "edit_e06_add", "t": "add", "p": "Add a bicycle near the fence on the left side of the image.", "b": "imgedit"}, {"f": "edit_e07_remove", "t": "remove", "p": "Remove the helicopter in the foreground.", "b": "imgedit"}, {"f": "edit_e08_adjust", "t": "adjust", "p": "Change the skin tone to a lighter shade.", "b": "imgedit"}, {"f": "edit_e09_extract", "t": "extract", "p": "Extract the brown trout fish from the image.", "b": "imgedit"}, {"f": "edit_e10_style", "t": "style", "p": "Transfer the image into a classic impasto oil-painting style.", "b": "imgedit"}, {"f": "edit_e11_compose", "t": "compose", "p": "Remove the laptop from the person's lap, and change the color of the couch to light blue.", "b": "imgedit"}];
-var FACES=[{"c": "face_closeup", "i": 0, "p": "a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes, natural window light"}, {"c": "face_closeup", "i": 1, "p": "a close-up portrait of a young woman with freckles smiling warmly, shallow depth of field"}, {"c": "face_closeup", "i": 2, "p": "a studio headshot of a middle-aged Black man with a short beard, soft key light"}, {"c": "face_closeup", "i": 3, "p": "a close-up portrait of an East Asian woman in her thirties, neutral expression, grey background"}, {"c": "face_closeup", "i": 4, "p": "a candid close-up of a laughing child with curly hair, outdoor sunlight"}, {"c": "face_closeup", "i": 5, "p": "a dramatic side-lit portrait of a South Asian man looking away from the camera"}, {"c": "face_closeup", "i": 6, "p": "a close-up of an older woman with silver hair and glasses reading, warm lamplight"}, {"c": "face_closeup", "i": 7, "p": "a professional headshot of a blonde woman in a business suit against a white background"}, {"c": "face_hard", "i": 0, "p": "a portrait of a man with his hand resting on his chin, fingers visible against his face"}, {"c": "face_hard", "i": 1, "p": "two friends standing cheek to cheek smiling at the camera, close-up"}, {"c": "face_hard", "i": 2, "p": "a woman with long hair blowing across her face in the wind, backlit"}, {"c": "face_hard", "i": 3, "p": "a person wearing round glasses reflecting a window, close-up portrait"}, {"c": "face_hard", "i": 4, "p": "a close-up of a face half in shadow, strong chiaroscuro lighting"}, {"c": "face_hard", "i": 5, "p": "an elderly couple's faces close together, both smiling, soft focus background"}, {"c": "face_hard", "i": 6, "p": "a portrait of a man mid-laugh with teeth visible and eyes crinkled"}, {"c": "face_hard", "i": 7, "p": "a baby's face resting on a parent's shoulder, very close up"}];
 (function(){
 "use strict";
 var NS="http://www.w3.org/2000/svg";
-function el(n,a){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);return e;}
-function cv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
-function T(x,y,s,cls,anc){var t=el("text",{x:x,y:y,"text-anchor":anc||"middle"});if(cls)t.setAttribute("class",cls);t.textContent=s;return t;}
-function tip(node,s){var t=el("title",{});t.textContent=s;node.appendChild(t);return node;}
 function $(id){return document.getElementById(id);}
-function each(sel,f){Array.prototype.forEach.call(document.querySelectorAll(sel),f);}
+function qa(root,sel){return Array.prototype.slice.call(root.querySelectorAll(sel));}
+function mk(tag,attrs,text){var e=document.createElement(tag);for(var k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;return e;}
+function sv(tag,attrs,text){var e=document.createElementNS(NS,tag);for(var k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;return e;}
+function fmt(v,d){var s=Math.abs(v).toFixed(d);return(v<0?"−":v>0?"+":"")+s;}
 
-/* ---------- theme + progress ---------- */
-try{var sv=localStorage.getItem("mo-theme");if(sv)document.documentElement.setAttribute("data-theme",sv);}catch(e){}
-function cur(){var s=document.documentElement.getAttribute("data-theme");return s||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");}
-$("theme").addEventListener("click",function(){var n=cur()==="dark"?"light":"dark";
-  document.documentElement.setAttribute("data-theme",n);try{localStorage.setItem("mo-theme",n);}catch(e){}drawAll();});
-addEventListener("scroll",function(){var h=document.documentElement;var p=h.scrollTop/((h.scrollHeight-h.clientHeight)||1);
-  $("prog").style.width=(Math.max(0,Math.min(1,p))*100)+"%";},{passive:true});
+/* ---------------- data, copied from the evaluation outputs ---------------- */
+var GEN=[
+ {id:"01_portrait",name:"Fisherman",k1:1,k2:0,p:"A close-up portrait of an elderly fisherman with a weathered face and a short white beard, wearing a bright yellow raincoat. Warm golden hour light rakes across his cheek from the left, leaving the right side in soft shadow. The harbour behind him is thrown far out of focus into blue-grey bokeh."},
+ {id:"02_wildlife",name:"Fox in the snow",k1:1,k2:0,p:"A red fox standing alert in a snow-covered meadow at dawn, its orange fur vivid against the white ground, breath visible in the cold air. Bare birch trunks recede into soft mist behind it. Shot on a telephoto lens with a shallow depth of field."},
+ {id:"03_landscape",name:"Mountain valley",k1:2,k2:3,p:"A vast mountain valley at sunrise, layered ridgelines fading from deep blue in the foreground to pale lavender at the horizon. A river of low cloud fills the valley floor, lit orange where the first sunlight strikes it. Snow caps the highest peaks."},
+ {id:"04_food",name:"Ramen",k1:2,k2:1,p:"An overhead shot of a rustic wooden table with a bowl of steaming ramen: golden broth, a soft-boiled egg halved to show the runny yolk, sliced pork, spring onion and a sheet of nori. Chopsticks rest on a folded linen napkin beside it. Soft diffused daylight from a window."},
+ {id:"05_interior",name:"Library",k1:0,k2:3,p:"The interior of a modern library atrium, four floors of pale oak shelving curving around an open void, a glass ceiling above flooding the space with daylight. A few readers sit at long tables on the ground floor. Strong clean perspective lines converge toward the far wall."},
+ {id:"06_vehicle",name:"Convertible",k1:1,k2:2,p:"A vintage teal convertible parked on a coastal road at dusk, its chrome bumper and polished paintwork reflecting the last pink light of the sky. The ocean stretches out behind a low stone wall. Headlights are on, casting a warm pool on the asphalt."},
+ {id:"07_stilllife",name:"Glass bottles",k1:1,k2:3,p:"A still life of three glass bottles of different heights on a dark slate surface, backlit so the light refracts through the green, amber and clear glass. A scattering of coffee beans lies in front of them. Deep shadows, single hard light source from behind."},
+ {id:"08_fantasy",name:"Whale in the sky",k1:1,k2:1,p:"A giant whale drifting through the sky above a quiet seaside town, barnacles on its underside, seabirds circling around it. Villagers in the cobbled square below look up. The light is soft and overcast, and the whale casts a vast shadow across the rooftops."},
+ {id:"09_macro",name:"Dragonfly",k1:0,k2:2,p:"An extreme macro photograph of a dew-covered dragonfly resting on a blade of grass in early morning. Every facet of its compound eye is sharp, its wings are translucent with visible veins, and droplets of water bead along its body. The background dissolves into green bokeh."},
+ {id:"10_cityscape",name:"Neon street",k1:1,k2:1,p:"A rain-slick street in a dense Asian city at night, dozens of neon signs in pink, cyan and red reflected in the puddles. A lone figure with a transparent umbrella walks away from the camera. Steam rises from a grate. Long exposure, wet asphalt, deep saturated colour."},
+ {id:"11_underwater",name:"Coral reef",k1:2,k2:1,p:"An underwater scene of a coral reef in clear turquoise water, shafts of sunlight cutting down from the surface. A school of small yellow fish moves through the frame, and a sea turtle glides past a large brain coral. Fine particles drift in the light beams."},
+ {id:"12_action",name:"Skateboarder",k1:1,k2:3,p:"A skateboarder mid-air over a concrete bowl at a skatepark, board tilted, arms out for balance, caught against a bright blue sky with a few thin clouds. The rim of the bowl and the crowd behind are slightly motion-blurred, the rider sharp."},
+ {id:"13_painting",name:"Sunflower painting",k1:3,k2:2,p:"An oil painting in thick impasto of a field of sunflowers under a turbulent evening sky, heavy visible brushstrokes, deep yellows and ultramarine blues, in the manner of post-impressionist landscape painting. Canvas texture is visible."},
+ {id:"14_text",name:"Shop sign",k1:0,k2:1,p:"A weathered wooden shop sign hanging above a cobbled street, with the words “THE DAILY GRIND” carved and painted in cream serif letters on a dark green background. A small painted coffee cup sits below the text. Overcast afternoon light."},
+ {id:"15_counting",name:"Three mugs",k1:0,k2:1,p:"Three ceramic mugs arranged in a row on a white marble counter: the left one matte black, the middle one glossy red, the right one speckled blue. Behind them stands a small green potted succulent. Even soft studio lighting, clean white background."},
+ {id:"16_child_crayons",name:"Child drawing (DPG-Bench)",k1:3,k2:1,p:"A young child with brown hair, focused intently, sits at a wooden table scattered with colorful crayons and paper. In their small hand is a bright red pencil, with which they are diligently drawing a vibrant blue flower that's taking shape on the white sheet before them. Sunlight filters through a nearby window, casting a warm glow on the child's artwork."},
+ {id:"17_truck_porsche",name:"Pickup and Porsche (DPG-Bench)",k1:1,k2:1,p:"A vibrant orange pickup truck parked beside a sleek yellow Porsche 911 on a smooth gray asphalt road. The Porsche's polished surface reflects the sunlight, highlighting its aerodynamic shape and the truck's sturdy, boxy frame. Between the two vehicles, the contrasting sizes and designs are evident, with the pickup's raised suspension towering over the low-profile sports car."},
+ {id:"18_train_station",name:"Train station (DPG-Bench)",k1:1,k2:0,p:"A traveler stands in a busy train station, clad in a tan jacket that falls to their mid-thigh, paired with a snugly fitted gray scarf around their neck. On their back, a worn brown backpack suggests a journey in progress. They are intently gazing at the cell phone in their hands, perhaps checking a schedule or reading a message. Before them, a sleek silver train rests on the track, its doors poised to open and welcome passengers to the next leg of their travels."},
+ {id:"19_orange_flowers",name:"Orange flowers (DPG-Bench)",k1:1,k2:1,p:"a vibrant plant with star-shaped orange flowers blooming amidst lush green leaves. The plant is potted in a terracotta container that sits on a wooden shelf. Around it, other houseplants contribute to a small indoor garden atmosphere."},
+ {id:"20_tree_fence",name:"Tree and fence (DPG-Bench)",k1:1,k2:0,p:"a sturdy tree with a thick trunk and sprawling branches that have intertwined with the metal links of a silver chain-link fence. the fence is partially enveloped by the tree's roots and bark, creating a unique blend of natural and man-made elements. the surrounding area is dotted with green grass and a few scattered wildflowers."}
+];
+var BYID={};GEN.forEach(function(g){BYID[g.id]=g;});
+var VS=[["17_truck_porsche","Pickup and Porsche"],["20_tree_fence","Tree and fence"],["09_macro","Dragonfly"],["11_underwater","Coral reef"],["08_fantasy","Whale in the sky"],["04_food","Ramen"]];
+var FACES=[["face_closeup_00","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes, natural window light"],["face_closeup_01","a close-up portrait of a young woman with freckles smiling warmly, shallow depth of field"],["face_closeup_02","a studio headshot of a middle-aged Black man with a short beard, soft key light"],["face_closeup_03","a close-up portrait of an East Asian woman in her thirties, neutral expression, grey background"],["face_closeup_04","a candid close-up of a laughing child with curly hair, outdoor sunlight"],["face_closeup_05","a dramatic side-lit portrait of a South Asian man looking away from the camera"],["face_closeup_06","a close-up of an older woman with silver hair and glasses reading, warm lamplight"],["face_closeup_07","a professional headshot of a blonde woman in a business suit against a white background"],["face_hard_00","a portrait of a man with his hand resting on his chin, fingers visible against his face"],["face_hard_01","two friends standing cheek to cheek smiling at the camera, close-up"],["face_hard_02","a woman with long hair blowing across her face in the wind, backlit"],["face_hard_03","a person wearing round glasses reflecting a window, close-up portrait"],["face_hard_04","a close-up of a face half in shadow, strong chiaroscuro lighting"],["face_hard_05","an elderly couple's faces close together, both smiling, soft focus background"],["face_hard_06","a portrait of a man mid-laugh with teeth visible and eyes crinkled"],["face_hard_07","a baby's face resting on a parent's shoulder, very close up"]];
+var EDITS=[
+ {f:"edit_e01_replace",t:"Replace",p:"Replace the dragon made of pipe cleaners in the image with a bright yellow rubber duck."},
+ {f:"edit_e02_background",t:"Background",p:"Change the cloudy and foggy hilltop background to a bright, sunny beach environment."},
+ {f:"edit_e03_motion_change",t:"Motion",p:"change the action of the horses to galloping"},
+ {f:"edit_e04_style_change",t:"Ghibli style",p:"Switch to a Ghibli style."},
+ {f:"edit_e05_text_change",t:"Text",p:"Replace the text '32' with '33'"},
+ {f:"edit_e06_add",t:"Add",p:"Add a bicycle near the fence on the left side of the image."},
+ {f:"edit_e07_remove",t:"Remove",p:"Remove the helicopter in the foreground."},
+ {f:"edit_e08_adjust",t:"Adjust",p:"Change the skin tone to a lighter shade."},
+ {f:"edit_e09_extract",t:"Extract",p:"Extract the brown trout fish from the image."},
+ {f:"edit_e10_style",t:"Oil painting",p:"Transfer the image into a classic impasto oil-painting style."},
+ {f:"edit_e11_compose",t:"Two edits",p:"Remove the laptop from the person's lap, and change the color of the couch to light blue."}
+];
 
-/* ---------- architecture ---------- */
-var ARCH={
- prompt:["Text prompt","The prompt, or the edit instruction when editing. Tokenized with the vision-language model's own chat template, byte-identical to training.",["e1"]],
- image:["Source image · editing only","Sliced into up to nine 448px tiles plus an overview and read by the vision tower. It reaches the diffusion model only as semantic tokens &mdash; the root of section 10.",["e2","e10"]],
- vlm:["MiniCPM-V-4.6 · frozen · 1.30B","Reads the prompt and, for edits, the source image. Frozen throughout, so its understanding is exactly the released model's (MMMU 53.8). Its last hidden layer is the conditioning.",["e1","e2","e3"]],
- conn:["Connector · trained · 8.8M","Fuses the last hidden layer, compresses 1024→512, refines with two depthwise-conv blocks (local) and two attention blocks (global), then projects to the 2304-d cross-attention space.",["e3","e4"]],
- dit:["SANA-600M diffusion transformer · trained · 591.7M","28 blocks of linear attention with cross-attention to the connector. Denoises a 32×16×16 latent: 256 tokens, fixed. Ships at 12 DPM-Solver++ steps, cfg 1.5.",["e4","e5","e6","e11"]],
- noise:["Gaussian noise · 32×16×16","In evaluation it is seeded from a hash of the prompt, so every model sees identical noise and every comparison is paired.",["e5"]],
- dec:["DC-AE decoder · frozen","32× spatial compression; decodes the latent to 512px in 28.5 ms. Must run in bf16 &mdash; fp16 underflows inside it and silently returns zeros.",["e6","e7","e8"]],
- head:["1024px decoder head · ours · 106.5M","Reads the decoder's last hidden features (128 channels at 512px) and learns detail on top of a bicubic ×2 anchor. +58 ms, content-neutral. Section 05.",["e8","e9"]],
- venc:["VAE encoder · experimental","Encodes the source to a 32×16×16 latent that is patch-embedded and added at block 0 behind a learned gate. Adds no tokens. Training now &mdash; section 10.",["e10","e11"]],
- o512:["512 × 512 output","817 ms end-to-end at batch 1, 20 steps, on one RTX PRO 6000.",["e7"]],
- o1024:["1024 × 1024 output","874 ms end-to-end through the decoder head: +7.1% for four times the pixels.",["e9"]]
-};
-var svgA=$("archsvg"), det=$("archdetail");
-function archOn(k){
-  if(!k||!ARCH[k]){svgA.classList.remove("dim");each("#archsvg .on",function(n){n.classList.remove("on");});
-    det.innerHTML="<b>Tap a block</b> to see what it does, whether it is trained, and what it costs.";return;}
-  svgA.classList.add("dim");each("#archsvg .on",function(n){n.classList.remove("on");});
-  var nd=svgA.querySelector('[data-n="'+k+'"]'); if(nd)nd.classList.add("on");
-  ARCH[k][2].forEach(function(e){var g=svgA.querySelector('[data-e="'+e+'"]');if(g)g.classList.add("on");});
-  det.innerHTML="<b>"+ARCH[k][0]+".</b> "+ARCH[k][1];
+/* ---------------- theme ---------------- */
+var root=document.documentElement,themeBtn=$("theme");
+function isDark(){var t=root.getAttribute("data-theme");if(t)return t==="dark";return !!(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches);}
+function syncTheme(){themeBtn.textContent=isDark()?"Light":"Dark";}
+try{var saved=localStorage.getItem("mo2-theme");if(saved==="dark"||saved==="light")root.setAttribute("data-theme",saved);}catch(e){}
+syncTheme();
+themeBtn.addEventListener("click",function(){var n=isDark()?"light":"dark";root.setAttribute("data-theme",n);try{localStorage.setItem("mo2-theme",n);}catch(e){}syncTheme();});
+try{matchMedia("(prefers-color-scheme: dark)").addEventListener("change",syncTheme);}catch(e){}
+
+/* ---------------- contents: highlight the current section ---------------- */
+(function(){
+  var links=qa($("toc"),"a"),map={};
+  links.forEach(function(a){map[a.getAttribute("href").slice(1)]=a;});
+  var heads=qa(document,"article h2[id]").filter(function(h){return map[h.id];});
+  function update(){
+    var y=window.scrollY+120,cur="top";
+    heads.forEach(function(h){if(h.getBoundingClientRect().top+window.scrollY<=y)cur=h.id;});
+    links.forEach(function(a){a.setAttribute("aria-current",a===map[cur]?"true":"false");});
+  }
+  var ticking=false;
+  addEventListener("scroll",function(){if(!ticking){ticking=true;requestAnimationFrame(function(){ticking=false;update();});}},{passive:true});
+  update();
+})();
+
+/* ---------------- copy button ---------------- */
+qa(document,".code .copy").forEach(function(b){
+  b.addEventListener("click",function(){
+    var pre=b.parentNode.querySelector("pre"),txt=pre.innerText;
+    function done(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy";},1500);}
+    function fallback(){var r=document.createRange();r.selectNodeContents(pre);var s=getSelection();s.removeAllRanges();s.addRange(r);b.textContent="Press Ctrl+C";setTimeout(function(){b.textContent="Copy";},2500);}
+    try{navigator.clipboard.writeText(txt).then(done,fallback);}catch(e){fallback();}
+  });
+});
+
+/* ---------------- lightbox ---------------- */
+var lb=$("lb"),lbImg=$("lb-img"),lbCap=$("lb-cap"),lbReturn=null;
+function openLb(src,cap){lbReturn=document.activeElement;lbImg.src=src;lbImg.alt=cap;lbCap.textContent=cap;lb.hidden=false;$("lb-x").focus();}
+function closeLb(){lb.hidden=true;lbImg.removeAttribute("src");if(lbReturn&&lbReturn.focus)lbReturn.focus();}
+$("lb-x").addEventListener("click",closeLb);
+lb.addEventListener("click",function(e){if(e.target===lb)closeLb();});
+addEventListener("keydown",function(e){if(!lb.hidden&&e.key==="Escape")closeLb();});
+
+/* ---------------- v1 against v2, best of four ---------------- */
+(function(){
+  var host=$("vs");
+  [VS.slice(0,3),VS.slice(3)].forEach(function(group){
+    var g=mk("div",{"class":"vs"});
+    g.appendChild(mk("span",{}));
+    group.forEach(function(v){g.appendChild(mk("span",{"class":"h"},v[1]));});
+    [["v1","k1","Mobile-O v1"],["v2","k2","Mobile-O v2"]].forEach(function(m){
+      g.appendChild(mk("span",{"class":"r"},m[0]));
+      group.forEach(function(v){
+        var it=BYID[v[0]],src="assets/gen/"+it.id+"_"+m[0]+"_"+it[m[1]]+".jpg";
+        var b=mk("button",{type:"button","aria-label":m[2]+": "+v[1]+". Open larger"});
+        b.appendChild(mk("img",{src:src,alt:m[2]+": "+v[1],loading:"lazy",width:"512",height:"512"}));
+        b.addEventListener("click",function(){openLb(src,m[2]+". "+it.p);});
+        g.appendChild(b);
+      });
+    });
+    host.appendChild(g);
+  });
+})();
+
+/* ---------------- shared: chip groups ---------------- */
+function chipGroup(host,items,initial,onPick){
+  var btns=items.map(function(it){
+    var b=mk("button",{type:"button","class":"chip","aria-pressed":"false"},it.label);
+    b.addEventListener("click",function(){set(it.key);onPick(it.key);});
+    host.appendChild(b);return b;
+  });
+  function set(key){btns.forEach(function(b,i){b.setAttribute("aria-pressed",items[i].key===key?"true":"false");});}
+  set(initial);return{set:set};
 }
-each("#archsvg .node",function(n){var k=n.getAttribute("data-n");
-  n.addEventListener("mouseenter",function(){archOn(k);});
-  n.addEventListener("focus",function(){archOn(k);});
-  n.addEventListener("click",function(e){e.stopPropagation();archOn(k);});});
-svgA.addEventListener("mouseleave",function(){archOn(null);});
 
-/* ---------- lightbox ---------- */
-var LB={list:[],i:0};
-function lbShow(){var it=LB.list[LB.i];$("lbimg").src=it.src;$("lbimg").alt=it.p;
-  $("lbtxt").innerHTML="<small>"+it.k+"</small>"+it.p.replace(/</g,"&lt;");}
-function lbOpen(list,i){if(!list||!list.length)return;LB.list=list;LB.i=Math.max(0,Math.min(i,list.length-1));lbShow();$("lb").classList.add("open");$("lbx").focus();}
-function lbClose(){$("lb").classList.remove("open");}
-$("lbx").addEventListener("click",lbClose);
-$("lb").addEventListener("click",function(e){if(e.target===$("lb"))lbClose();});
-$("lbp").addEventListener("click",function(){LB.i=(LB.i-1+LB.list.length)%LB.list.length;lbShow();});
-$("lbn").addEventListener("click",function(){LB.i=(LB.i+1)%LB.list.length;lbShow();});
-addEventListener("keydown",function(e){if(!$("lb").classList.contains("open"))return;
-  if(e.key==="Escape")lbClose();if(e.key==="ArrowLeft")$("lbp").click();if(e.key==="ArrowRight")$("lbn").click();});
+/* ---------------- shared: before/after slider ---------------- */
+function slider(el){
+  var a=el.querySelector("img.a"),b=el.querySelector("img.b"),bar=el.querySelector(".bar"),knob=el.querySelector(".knob"),
+      la=el.querySelector(".lab.l"),lr=el.querySelector(".lab.r"),pos=50,drag=false;
+  function set(p){pos=Math.max(0,Math.min(100,p));b.style.clipPath="inset(0 0 0 "+pos+"%)";bar.style.left=pos+"%";knob.style.left=pos+"%";el.setAttribute("aria-valuenow",Math.round(pos));}
+  function at(e){var r=el.getBoundingClientRect();set((e.clientX-r.left)/r.width*100);}
+  el.addEventListener("pointerdown",function(e){drag=true;try{el.setPointerCapture(e.pointerId);}catch(_){}at(e);});
+  el.addEventListener("pointermove",function(e){if(drag)at(e);});
+  el.addEventListener("pointerup",function(){drag=false;});
+  el.addEventListener("pointercancel",function(){drag=false;});
+  el.addEventListener("keydown",function(e){if(e.key==="ArrowLeft"){set(pos-5);e.preventDefault();}if(e.key==="ArrowRight"){set(pos+5);e.preventDefault();}});
+  set(50);
+  return{show:function(srcA,labA,srcB,labB,alt){a.src=srcA;b.src=srcB;la.textContent=labA;lr.textContent=labB;a.alt=alt+" ("+labA+")";b.alt=alt+" ("+labB+")";}};
+}
 
-/* ---------- generation gallery ---------- */
-var GL=GEN.map(function(g){return{src:"assets/gen/"+g.f+".jpg",p:g.p,k:g.cat,g:g.g};});
-var gg=$("gengal");
-GL.forEach(function(it,i){var b=document.createElement("button");b.setAttribute("data-g",it.g);
-  b.innerHTML='<img src="'+it.src+'" alt="" loading="lazy"><span class="cap">'+it.k+'</span>';
-  b.querySelector("img").alt=it.p;
-  b.addEventListener("click",function(){var vis=GL.filter(function(x){return cg==="all"||x.g===cg;});var k=vis.indexOf(it);if(k<0){vis=GL;k=i;}lbOpen(vis,k);});
-  gg.appendChild(b);});
-var cg="all";
-each("#genchips .chip",function(c){c.addEventListener("click",function(){
-  each("#genchips .chip",function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
-  cg=c.getAttribute("data-g");
-  Array.prototype.forEach.call(gg.children,function(b){b.hidden=!(cg==="all"||b.getAttribute("data-g")===cg);});});});
+/* ---------------- all prompts, both models, every seed ---------------- */
+(function(){
+  var host=$("gen"),strip=host.querySelector(".strip"),imgs=qa(host,".main-img"),seedHosts=qa(host,".seeds"),ptxt=host.querySelector(".prompt-text");
+  var MODELS=[{tag:"v1",pick:"k1",label:"Mobile-O v1"},{tag:"v2",pick:"k2",label:"Mobile-O v2"}];
+  var cur=1,seed=[GEN[1].k1,GEN[1].k2],btns=[];
+  GEN.forEach(function(it,i){
+    var b=mk("button",{type:"button","aria-pressed":"false","aria-label":it.name,title:it.name});
+    b.style.backgroundImage="url(assets/gen/strip.jpg)";
+    b.style.backgroundSize=(GEN.length*100)+"% 100%";
+    b.style.backgroundPosition=(i/(GEN.length-1)*100)+"% 0";
+    b.addEventListener("click",function(){cur=i;seed=[it.k1,it.k2];render();});
+    strip.appendChild(b);btns.push(b);
+  });
+  function src(it,m,s){return "assets/gen/"+it.id+"_"+m.tag+"_"+s+".jpg";}
+  function render(){
+    var it=GEN[cur];
+    btns.forEach(function(b,i){b.setAttribute("aria-pressed",i===cur?"true":"false");});
+    MODELS.forEach(function(m,mi){
+      var s0=seed[mi];
+      imgs[mi].src=src(it,m,s0);imgs[mi].alt=m.label+": "+it.name+", image "+(s0+1)+" of 4";
+      imgs[mi].onclick=function(){openLb(src(it,m,s0),m.label+". "+it.p);};
+      var sh=seedHosts[mi];sh.textContent="";
+      for(var s=0;s<4;s++){(function(s){
+        var picked=it[m.pick]===s;
+        var b=mk("button",{type:"button","aria-pressed":s===s0?"true":"false","aria-label":m.label+", image "+(s+1)+" of 4"+(picked?", our favorite":"")});
+        b.appendChild(mk("img",{src:src(it,m,s),alt:"",loading:"lazy",width:"128",height:"128"}));
+        if(picked)b.appendChild(mk("span",{"class":"pick"}));
+        b.addEventListener("click",function(){seed[mi]=s;render();});
+        sh.appendChild(b);
+      })(s);}
+    });
+    ptxt.textContent="";
+    ptxt.appendChild(mk("span",{"class":"k"},it.name));
+    ptxt.appendChild(document.createTextNode("“"+it.p+"”"));
+  }
+  render();
+})();
 
-/* ---------- face gallery ---------- */
-var fg=$("facegal"), seed=0;
-function facesDraw(){fg.innerHTML="";
-  var list=FACES.map(function(f){var id=f.c+"_"+("0"+f.i).slice(-2)+"_"+seed;
-    return{src:"assets/faces/"+id+".jpg",p:f.p,k:(f.c==="face_hard"?"hard case":"close-up")+" · seed "+seed};});
-  list.forEach(function(it,i){var b=document.createElement("button");
-    b.innerHTML='<img src="'+it.src+'" alt="" loading="lazy"><span class="cap">'+it.k+'</span>';
-    b.querySelector("img").alt=it.p;
-    b.addEventListener("click",function(){lbOpen(list,i);});fg.appendChild(b);});}
-each("#seedchips .chip",function(c){c.addEventListener("click",function(){
-  each("#seedchips .chip",function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
-  seed=+c.getAttribute("data-seed");facesDraw();});});
-facesDraw();
+/* ---------------- faces ---------------- */
+(function(){
+  var host=$("faces-viewer"),strip=host.querySelector(".strip"),four=host.querySelector(".four"),ptxt=host.querySelector(".prompt-text"),cur=9,btns=[];
+  FACES.forEach(function(f,i){
+    var b=mk("button",{type:"button","aria-pressed":"false","aria-label":f[1],title:f[1]});
+    b.style.backgroundImage="url(assets/faces/strip.jpg)";
+    b.style.backgroundSize=(FACES.length*100)+"% 100%";
+    b.style.backgroundPosition=(i/(FACES.length-1)*100)+"% 0";
+    b.addEventListener("click",function(){cur=i;render();});
+    strip.appendChild(b);btns.push(b);
+  });
+  function render(){
+    var f=FACES[cur];
+    btns.forEach(function(b,i){b.setAttribute("aria-pressed",i===cur?"true":"false");});
+    four.textContent="";
+    for(var s=0;s<4;s++){(function(s){
+      var src="assets/faces/"+f[0]+"_"+s+".jpg",b=mk("button",{type:"button","aria-label":"Image "+(s+1)+" of 4. Open larger"});
+      b.appendChild(mk("img",{src:src,alt:f[1]+", image "+(s+1)+" of 4",loading:"lazy",width:"512",height:"512"}));
+      b.addEventListener("click",function(){openLb(src,"Image "+(s+1)+" of 4. “"+f[1]+"”");});
+      four.appendChild(b);
+    })(s);}
+    ptxt.textContent="“"+f[1]+"”";
+  }
+  render();
+})();
 
-/* ---------- editing before / after ---------- */
-var ba=$("ba"), el_=$("edlist"), pos=50;
-function baSet(p){pos=Math.max(0,Math.min(100,p));$("ba-out").style.clipPath="inset(0 0 0 "+pos+"%)";$("ba-h").style.left=pos+"%";}
-function edShow(i){var e=EDITS[i];$("ba-src").src="assets/edit/"+e.f+"_src.jpg";$("ba-out").src="assets/edit/"+e.f+"_out.jpg";
-  $("ba-inst").innerHTML="<b style='color:var(--ink)'>“"+e.p.replace(/</g,"&lt;")+"”</b>";
-  each("#edlist button",function(b,j){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false");});baSet(50);}
-EDITS.forEach(function(e,i){var b=document.createElement("button");b.setAttribute("data-i",i);
-  b.innerHTML='<span class="ty">'+e.t+'</span>'+e.p.replace(/</g,"&lt;");
-  b.addEventListener("click",function(){edShow(i);});el_.appendChild(b);});
-function baMove(ev){var r=ba.getBoundingClientRect();var x=(ev.touches?ev.touches[0].clientX:ev.clientX)-r.left;baSet(x/r.width*100);}
-var drag=false;
-ba.addEventListener("pointerdown",function(e){drag=true;baMove(e);});
-addEventListener("pointermove",function(e){if(drag)baMove(e);});
-addEventListener("pointerup",function(){drag=false;});
-ba.setAttribute("tabindex","0");
-ba.addEventListener("keydown",function(e){if(e.key==="ArrowLeft")baSet(pos-5);if(e.key==="ArrowRight")baSet(pos+5);});
-edShow(4);
+/* ---------------- editing ---------------- */
+(function(){
+  var host=$("edit"),sl=slider(host.querySelector(".cmp")),ins=host.querySelector('[data-role="instruction"]');
+  var e=4,m="out";
+  function show(){var it=EDITS[e];sl.show("assets/edit/"+it.f+"_src.jpg","Source","assets/edit/"+it.f+"_"+m+".jpg",m==="out"?"v2 edit":"v1 edit",it.t);
+    ins.textContent="";ins.appendChild(mk("span",{"class":"k"},"Instruction"));ins.appendChild(document.createTextNode("“"+it.p+"”"));}
+  chipGroup(host.querySelector('[data-role="edits"]'),EDITS.map(function(x,i){return{key:i,label:x.t};}),e,function(k){e=k;show();});
+  chipGroup(host.querySelector('[data-role="model"]'),[{key:"out",label:"Mobile-O v2"},{key:"v1",label:"Mobile-O v1"}],m,function(k){m=k;show();});
+  show();
+})();
 
-/* ---------- fox zoom ---------- */
-each('.chip[data-z]',function(c){c.addEventListener("click",function(){
-  each('.chip[data-z]',function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
-  var z=c.getAttribute("data-z");each(".cmp3 img",function(im){im.src=im.getAttribute("data-"+z);});});});
+/* ---------------- chart tooltips ---------------- */
+function tipper(chartEl){
+  var tip=chartEl.querySelector(".tip");
+  return{
+    show:function(evtOrEl,lines){
+      var r=chartEl.getBoundingClientRect(),x,y;
+      if(evtOrEl&&evtOrEl.clientX!=null&&evtOrEl.clientX!==0){x=evtOrEl.clientX-r.left;y=evtOrEl.clientY-r.top;}
+      else{var br=(evtOrEl.target||evtOrEl).getBoundingClientRect();x=br.left+br.width/2-r.left;y=br.top-r.top;}
+      tip.textContent="";lines.forEach(function(line,i){if(i)tip.appendChild(mk("br",{}));if(typeof line==="string")tip.appendChild(document.createTextNode(line));else tip.appendChild(mk("b",{},line.b));});
+      tip.hidden=false;
+      var w=tip.offsetWidth,cx=Math.max(w/2+4,Math.min(r.width-w/2-4,x));
+      tip.style.left=cx+"px";tip.style.top=Math.max(y,tip.offsetHeight+14)+"px";
+    },
+    hide:function(){tip.hidden=true;}
+  };
+}
+function bindTip(node,t,lines){
+  node.addEventListener("pointerenter",function(e){t.show(e,lines);});
+  node.addEventListener("pointermove",function(e){t.show(e,lines);});
+  node.addEventListener("pointerleave",function(){t.hide();});
+  node.addEventListener("focus",function(){t.show({target:node},lines);});
+  node.addEventListener("blur",function(){t.hide();});
+}
 
-/* ---------- scoreboard ---------- */
-each("#sbchips .chip",function(c){c.addEventListener("click",function(){
-  each("#sbchips .chip",function(o){o.setAttribute("aria-pressed",o===c?"true":"false");});
-  var f=c.getAttribute("data-f");
-  each("#sb tbody tr",function(r){var g=r.getAttribute("data-g");r.style.display=(f==="all"||f===g)?"":"none";});});});
-each("#sb th[data-s]",function(th){var dir=-1;th.addEventListener("click",function(){
-  var i=+th.getAttribute("data-s"),tb=document.querySelector("#sb tbody");
-  var rows=Array.prototype.slice.call(tb.querySelectorAll("tr"));
-  rows.sort(function(a,b){var A=parseFloat(a.children[i].textContent.replace("−","-")),B=parseFloat(b.children[i].textContent.replace("−","-"));
-    if(isNaN(A)&&isNaN(B))return 0;if(isNaN(A))return 1;if(isNaN(B))return -1;return(A-B)*dir;});
-  dir=-dir;rows.forEach(function(r){tb.appendChild(r);});});});
 
-/* ---------- code tabs ---------- */
-each(".tab",function(t){t.addEventListener("click",function(){
-  each(".tab",function(o){o.setAttribute("aria-selected",o===t?"true":"false");});
-  each(".tabpanel",function(p){p.hidden=(p.id!==t.getAttribute("data-t"));});});});
+/* charts are drawn at the width they are shown at, so text stays readable on phones */
+function responsive(chartEl,draw){
+  var svg=chartEl.querySelector("svg"),last=0;
+  function go(){var w=Math.round(chartEl.clientWidth);if(w&&w!==last){last=w;draw(svg,w);}}
+  go();var tm=null;addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(go,120);});
+}
+/* ---------------- GenEval by category (v1 to v2) ---------------- */
+(function(){
+  var chartEl=$("chart-geneval"),t=tipper(chartEl);
+  var C=[["Single object",98.12,99.06],["Two objects",89.65,96.97],["Counting",68.75,88.75],["Colors",85.64,90.96],["Position",74.5,93.5],["Color attribution",58.75,77.75]];
+  responsive(chartEl,function(svg,W){
+    svg.textContent="";
+    var H=250,L=Math.min(132,Math.round(W*.33)),R=36,T=6,B=30,lo=50,hi=100,rowH=(H-T-B)/C.length;
+    svg.setAttribute("viewBox","0 0 "+W+" "+H);
+    var xs=function(v){return L+(W-L-R)*(v-lo)/(hi-lo);};
+    [50,60,70,80,90,100].forEach(function(v){
+      svg.appendChild(sv("line",{x1:xs(v),x2:xs(v),y1:T,y2:H-B,"class":"gl"}));
+      if(W>=420||v%20===10||v===100)svg.appendChild(sv("text",{x:xs(v),y:H-B+16,"text-anchor":"middle"},v+"%"));
+    });
+    C.forEach(function(c,i){
+      var y=T+rowH*(i+.5);
+      svg.appendChild(sv("text",{x:L-12,y:y+4,"text-anchor":"end","class":"t2"},c[0]));
+      var g=sv("g",{"class":"pt",tabindex:"0","aria-label":c[0]+": v1 "+c[1].toFixed(1)+" percent, v2 "+c[2].toFixed(1)+" percent"});
+      g.appendChild(sv("rect",{x:L,y:y-rowH/2,width:W-L-R,height:rowH,style:"fill:transparent"}));
+      g.appendChild(sv("line",{x1:xs(c[1]),x2:xs(c[2]),y1:y,y2:y,style:"stroke:var(--n1);stroke-width:2"}));
+      g.appendChild(sv("circle",{"class":"ring",cx:xs(c[1]),cy:y,r:5.5,style:"fill:var(--n1);stroke:var(--bg);stroke-width:2"}));
+      g.appendChild(sv("circle",{"class":"ring",cx:xs(c[2]),cy:y,r:6,style:"fill:var(--s1);stroke:var(--bg);stroke-width:2"}));
+      g.appendChild(sv("text",{x:xs(c[1])-10,y:y+4,"text-anchor":"end"},c[1].toFixed(0)));
+      g.appendChild(sv("text",{x:xs(c[2])+10,y:y+4,"class":"t1"},c[2].toFixed(0)));
+      bindTip(g,t,[{b:c[0]},"Mobile-O v1: "+c[1].toFixed(1)+"%","Mobile-O v2: "+c[2].toFixed(1)+"%"]);
+      svg.appendChild(g);
+    });
+  });
+})();
 
-/* ================= charts (all values measured; see text) ================= */
-function frame(s,W,H,L,R,Tp,B,lo,hi,fmt,n){for(var g=0;g<=n;g++){var v=lo+(hi-lo)*g/n,y=Tp+(H-Tp-B)*(1-(v-lo)/(hi-lo));
-  s.appendChild(el("line",{x1:L,x2:W-R,y1:y,y2:y,class:"gl"}));s.appendChild(T(L-9,y+4,fmt(v),null,"end"));}}
+/* ---------------- steps ---------------- */
+(function(){
+  var host=$("steps"),sl=slider(host.querySelector(".cmp")),chartEl=host.querySelector(".chart"),svg=chartEl.querySelector("svg"),t=tipper(chartEl);
+  var PR=[["face_closeup_00_0","Elderly man","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes"],["face_closeup_01_0","Freckles","a close-up portrait of a young woman with freckles smiling warmly"],["body_hands_00_0","Kneading dough","a close-up of two hands kneading dough on a floured wooden table"]];
+  var D=[[6,.103],[8,.132],[12,.100],[16,.102],[20,0],[28,.069],[40,.022]];
+  var p=0,n=12,stepChips;
+  function show(){var id=PR[p][0];sl.show("assets/steps/"+id+"_s20.jpg","20 steps","assets/steps/"+id+"_s"+n+".jpg",n+" steps",PR[p][2]);draw();}
+  chipGroup(host.querySelector('[data-role="prompts"]'),PR.map(function(x,i){return{key:i,label:x[1]};}),0,function(k){p=k;show();});
+  stepChips=chipGroup(host.querySelector('[data-role="steps"]'),D.filter(function(d){return d[0]!==20;}).map(function(d){return{key:d[0],label:d[0]+" steps"};}),12,function(k){n=k;show();});
+  function draw(){
+    var W=Math.max(300,Math.round(chartEl.clientWidth)||620);
+    svg.textContent="";
+    var H=210,L=46,R=10,T=24,B=40,lo=-.02,hi=.16;
+    svg.setAttribute("viewBox","0 0 "+W+" "+H);
+    var xs=function(i){return L+(W-L-R)*(i+.5)/D.length;},ys=function(v){return T+(H-T-B)*(1-(v-lo)/(hi-lo));};
+    [0,.05,.1,.15].forEach(function(v){
+      svg.appendChild(sv("line",{x1:L,x2:W-R,y1:ys(v),y2:ys(v),"class":v===0?"ax":"gl"}));
+      svg.appendChild(sv("text",{x:L-8,y:ys(v)+4,"text-anchor":"end"},v===0?"0":fmt(v,2)));
+    });
+    svg.appendChild(sv("text",{x:L,y:T-10,"class":"t2"},W<480?"Change compared with 20 steps":"Change in HumanBench score compared with 20 steps"));
+    svg.appendChild(sv("text",{x:(L+W-R)/2,y:H-6,"text-anchor":"middle"},"Sampler steps"));
+    D.forEach(function(d,i){
+      var x=xs(i),y=ys(d[1]),sel=d[0]===n,ref=d[0]===20;
+      svg.appendChild(sv("text",{x:x,y:H-B+18,"text-anchor":"middle","class":sel?"t1":""},String(d[0])));
+      var g=sv("g",{"class":"pt",tabindex:ref?"-1":"0",role:"button","aria-label":ref?"20 steps, the reference":d[0]+" steps: "+fmt(d[1],3)});
+      if(!ref)g.appendChild(sv("line",{x1:x,x2:x,y1:ys(0),y2:y,style:"stroke:var(--s1);stroke-width:2;opacity:"+(sel?1:.45)}));
+      if(sel)g.appendChild(sv("circle",{cx:x,cy:y,r:11,style:"fill:none;stroke:var(--s1);stroke-width:1.5;opacity:.45"}));
+      g.appendChild(sv("circle",{"class":"ring",cx:x,cy:y,r:ref?4.5:6,style:ref?"fill:var(--bg);stroke:var(--n3);stroke-width:2":"fill:var(--s1);stroke:var(--bg);stroke-width:2"}));
+      g.appendChild(sv("rect",{x:x-18,y:T,width:36,height:H-T-B,style:"fill:transparent"}));
+      if(sel&&!ref)g.appendChild(sv("text",{x:x,y:y-14,"text-anchor":"middle","class":"t1"},fmt(d[1],2)));
+      if(ref)g.appendChild(sv("text",{x:x,y:y-12,"text-anchor":"middle"},W<480?"ref.":"reference"));
+      if(!ref){
+        bindTip(g,t,[{b:d[0]+" steps"},fmt(d[1],3)+" compared with 20 steps"]);
+        var pick=function(){n=d[0];stepChips.set(n);show();};
+        g.addEventListener("click",pick);g.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();pick();}});
+      }
+      svg.appendChild(g);
+    });
+  }
+  var lastW=0,tm=null;addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(function(){var w=Math.round(chartEl.clientWidth);if(w!==lastW){lastW=w;draw();}},120);});
+  show();
+})();
 
-function drawHack(){var s=$("hackchart");if(!s)return;s.innerHTML="";
-  var W=700,H=290,L=60,R=60,Tp=28,B=46,ac=cv("--accent"),a2=cv("--accent-2");
-  var X=[0,750,1500],GE=[0.7403,0.9224,0.9502],DP=[72.611,67.818,65.954];
-  var xs=function(i){return L+(W-L-R)*(X[i]/1500);};
-  var y1=function(v){return Tp+(H-Tp-B)*(1-(v-0.70)/(1.00-0.70));};
-  var y2=function(v){return Tp+(H-Tp-B)*(1-(v-64)/(74-64));};
-  for(var g=0;g<=5;g++){var y=Tp+(H-Tp-B)*g/5;s.appendChild(el("line",{x1:L,x2:W-R,y1:y,y2:y,class:"gl"}));
-    s.appendChild(T(L-9,y+4,(1.00-0.06*g).toFixed(2),null,"end"));s.appendChild(T(W-R+9,y+4,String(74-2*g),null,"start"));}
-  [[GE,y1,ac,"GenEval ↑"],[DP,y2,a2,"DPG-Bench"]].forEach(function(S){var d="";
-    S[0].forEach(function(v,i){d+=(i?" L":"M")+xs(i)+" "+S[1](v);});
-    s.appendChild(el("path",{d:d,fill:"none",stroke:S[2],"stroke-width":2.6,"stroke-linecap":"round","stroke-linejoin":"round"}));
-    S[0].forEach(function(v,i){s.appendChild(tip(el("circle",{cx:xs(i),cy:S[1](v),r:5.5,fill:S[2]}),S[3]+" at step "+X[i]+": "+v));
-      s.appendChild(T(xs(i)+(i===2?-10:10),S[1](v)+(S[3][0]==="G"?-11:18),(v<2?v.toFixed(3):v.toFixed(1)),null,i===2?"end":"start"));});});
-  X.forEach(function(x,i){s.appendChild(T(xs(i),H-B+20,String(x)));});
-  s.appendChild(T((L+W-R)/2,H-8,"RL steps","lbl"));
-  var t1=T(L,16,"GenEval (left axis)","lbl","start");t1.setAttribute("style","fill:"+ac);s.appendChild(t1);
-  var t2=T(W-R,16,"DPG-Bench (right axis)","lbl","end");t2.setAttribute("style","fill:"+a2);s.appendChild(t2);}
+/* ---------------- guidance ---------------- */
+(function(){
+  var host=$("cfg"),sl=slider(host.querySelector(".cmp")),readout=host.querySelector('[data-role="readout"]');
+  var PR=[["face_closeup_01_0","Freckles","a close-up portrait of a young woman with freckles smiling warmly"],["face_hard_06_0","Laughing man","a portrait of a man mid-laugh with teeth visible and eyes crinkled"],["face_closeup_00_0","Elderly man","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes"]];
+  var G={g20:["2.0",-0.007],g30:["3.0",-0.158]};
+  var p=0,g="g30";
+  function show(){
+    var id=PR[p][0];
+    sl.show("assets/cfg/"+id+"_g15.jpg","Guidance 1.5","assets/cfg/"+id+"_"+g+".jpg","Guidance "+G[g][0],PR[p][2]);
+    readout.textContent="HumanBench realism score at guidance "+G[g][0]+", compared with 1.5: "+fmt(G[g][1],2)+" on a 1-to-5 scale";
+  }
+  chipGroup(host.querySelector('[data-role="prompts"]'),PR.map(function(x,i){return{key:i,label:x[1]};}),0,function(k){p=k;show();});
+  chipGroup(host.querySelector('[data-role="scale"]'),[{key:"g20",label:"Guidance 2.0"},{key:"g30",label:"Guidance 3.0"}],g,function(k){g=k;show();});
+  show();
+})();
 
-function drawLat(){var s=$("latchart");if(!s)return;s.innerHTML="";
-  var W=700,H=250,L=150,R=64,Tp=18,B=40,max=950;
-  var rows=[["512px",[["VLM encode",193.2,"--frozen-ink"],["diffusion, 20 steps",594.9,"--accent"],["decode",28.5,"--faint"]]],
-            ["1024 · head",[["VLM encode",193.2,"--frozen-ink"],["diffusion, 20 steps",594.9,"--accent"],["decoder head",86.2,"--accent-2"]]],
-            ["1024 · upsampler",[["VLM encode",193.2,"--frozen-ink"],["diffusion, 20 steps",594.9,"--accent"],["upsampler + decode",105.2,"--bad"]]]];
-  var bh=(H-Tp-B)/rows.length,sx=function(v){return (W-L-R)*v/max;};
-  [0,200,400,600,800].forEach(function(v){var x=L+sx(v);s.appendChild(el("line",{x1:x,x2:x,y1:Tp,y2:H-B,class:"gl"}));s.appendChild(T(x,H-B+16,v+"ms"));});
-  rows.forEach(function(r,i){var y=Tp+bh*i+bh*0.22,h=bh*0.56,x=L,tot=0;
-    s.appendChild(T(L-10,y+h/2+4,r[0],"lbl","end"));
-    r[1].forEach(function(seg){var w=sx(seg[1]);
-      s.appendChild(tip(el("rect",{x:x,y:y,width:Math.max(w,1.5),height:h,rx:3,style:"fill:var("+seg[2]+")",opacity:.88}),seg[0]+": "+seg[1]+" ms"));
-      if(w>70)s.appendChild(T(x+w/2,y+h/2+4,seg[0],null)).setAttribute("style","fill:#fff;font-size:10.5px");
-      x+=w;tot+=seg[1];});
-    s.appendChild(T(x+8,y+h/2+4,Math.round(tot)+" ms",null,"start"));});}
+/* ---------------- time per image ---------------- */
+(function(){
+  var chartEl=$("chart-lat"),t=tipper(chartEl);
+  var ROWS=[["512×512",[["Reading the prompt",193.2,"--n2"],["Diffusion, 20 steps",594.9,"--n1"],["Decoding to 512px",28.5,"--n3"]],816.6],
+            ["1024×1024",[["Reading the prompt",193.2,"--n2"],["Diffusion, 20 steps",594.9,"--n1"],["1024px head",86.2,"--s1"]],874.4]];
+  responsive(chartEl,function(svg,W){
+    svg.textContent="";
+    var L=78,R=58,T=6,B=28,H=128,max=950,bh=22,step=(H-T-B)/ROWS.length;
+    svg.setAttribute("viewBox","0 0 "+W+" "+H);
+    var xs=function(v){return (W-L-R)*v/max;};
+    [0,200,400,600,800].forEach(function(v){svg.appendChild(sv("line",{x1:L+xs(v),x2:L+xs(v),y1:T,y2:H-B,"class":v?"gl":"ax"}));
+      if(W>=480||v%400===0)svg.appendChild(sv("text",{x:L+xs(v),y:H-B+16,"text-anchor":"middle"},v+" ms"));});
+    ROWS.forEach(function(r,i){
+      var y=T+step*i+(step-bh)/2,x=L;
+      svg.appendChild(sv("text",{x:L-10,y:y+bh/2+4,"text-anchor":"end","class":"t2"},r[0]));
+      r[1].forEach(function(seg,j){
+        var w=xs(seg[1]),last=j===r[1].length-1,rx=4;
+        var g=sv("g",{"class":"pt",tabindex:"0","aria-label":r[0]+", "+seg[0]+": "+seg[1]+" ms"});
+        if(last)g.appendChild(sv("path",{d:"M"+x+","+y+" h"+Math.max(w-rx,0)+" a"+rx+","+rx+" 0 0 1 "+rx+","+rx+" v"+(bh-2*rx)+" a"+rx+","+rx+" 0 0 1 "+(-rx)+","+rx+" h"+(-Math.max(w-rx,0))+" z",style:"fill:var("+seg[2]+")"}));
+        else g.appendChild(sv("rect",{x:x,y:y,width:Math.max(w-2,1),height:bh,style:"fill:var("+seg[2]+")"}));
+        g.appendChild(sv("rect",{x:x,y:y-6,width:Math.max(w,8),height:bh+12,style:"fill:transparent"}));
+        bindTip(g,t,[{b:seg[0]},seg[1]+" ms"]);
+        svg.appendChild(g);x+=w;
+      });
+      svg.appendChild(sv("text",{x:x+8,y:y+bh/2+4,"class":"t1"},Math.round(r[2])+" ms"));
+    });
+  });
+})();
 
-function drawSteps(){var s=$("stepchart");if(!s)return;s.innerHTML="";
-  var W=700,H=290,L=60,R=18,Tp=38,B=46,ac=cv("--accent"),mu=cv("--muted");
-  var D=[[6,.103,.045,1],[8,.132,.044,1],[12,.100,.034,1],[16,.102,.036,1],[20,0,0,2],[28,.069,.036,0],[40,.022,.039,0]];
-  var lo=-.04,hi=.2,xs=function(i){return L+(W-L-R)*(i/(D.length-1));},ys=function(v){return Tp+(H-Tp-B)*(1-(v-lo)/(hi-lo));};
-  frame(s,W,H,L,R,Tp,B,lo,hi,function(v){return(v>=0?"+":"")+v.toFixed(2);},6);
-  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(0),y2:ys(0),stroke:mu,"stroke-width":1.2,"stroke-dasharray":"5 4"}));
-  var d="";D.forEach(function(p,i){d+=(i?" L":"M")+xs(i)+" "+ys(p[1]);});
-  s.appendChild(el("path",{d:d,fill:"none",stroke:ac,"stroke-width":2.2,opacity:.45}));
-  D.forEach(function(p,i){var x=xs(i);
-    if(p[2])s.appendChild(el("line",{x1:x,x2:x,y1:ys(p[1]-p[2]),y2:ys(p[1]+p[2]),stroke:ac,"stroke-width":2,opacity:.6}));
-    var c=el("circle",{cx:x,cy:ys(p[1]),r:p[3]===2?4.5:6,fill:p[3]===1?ac:cv("--card"),stroke:p[3]===2?mu:ac,"stroke-width":2.2});
-    s.appendChild(tip(c,p[0]+" steps: "+(p[3]===2?"the 20-step protocol":((p[1]>=0?"+":"")+p[1].toFixed(3)+" ± "+p[2].toFixed(3)+(p[3]?" (significant)":" (not significant)")))));
-    s.appendChild(T(x,H-B+20,String(p[0])));});
-  s.appendChild(T((L+W-R)/2,H-8,"DPM-Solver++ steps","lbl"));
-  s.appendChild(T(14,14,"paired HumanBench gain vs. 20 steps","lbl","start"));}
-
-function drawCfg(){var s=$("cfgchart");if(!s)return;s.innerHTML="";
-  var W=700,H=280,L=60,R=18,Tp=40,B=50,ac=cv("--accent"),a2=cv("--accent-2"),mu=cv("--muted");
-  var D=[["1.5",0,0,2],["2.0",.038,.042,0],["3.0",-.041,.047,0],["4.5 +ivl",-.171,.051,1]];
-  var lo=-.24,hi=.12,bw=(W-L-R)/D.length,ys=function(v){return Tp+(H-Tp-B)*(1-(v-lo)/(hi-lo));};
-  frame(s,W,H,L,R,Tp,B,lo,hi,function(v){return Math.abs(v)<1e-9?"0.00":(v>0?"+":"")+v.toFixed(2);},6);
-  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(0),y2:ys(0),stroke:mu,"stroke-width":1.3}));
-  function bar(cx,w,v,e,col,sig,label){var y=ys(Math.max(0,v)),h=Math.abs(ys(v)-ys(0));
-    s.appendChild(tip(el("rect",{x:cx-w/2,y:y,width:w,height:Math.max(h,1.5),rx:4,fill:col,opacity:sig?.92:.32}),label));
-    if(e)s.appendChild(el("line",{x1:cx,x2:cx,y1:ys(v-e),y2:ys(v+e),stroke:mu,"stroke-width":1.5}));}
-  D.forEach(function(p,i){var cx=L+bw*i+bw*0.5;
-    if(p[3]===2){s.appendChild(tip(el("circle",{cx:cx,cy:ys(0),r:5,fill:cv("--card"),stroke:mu,"stroke-width":2}),"cfg 1.5: the reference"));
-      s.appendChild(T(cx,ys(0)-11,"reference",null));}
-    else bar(p[0]==="3.0"?cx-13:cx,22,p[1],p[2],ac,p[3],"RL model, cfg "+p[0]+": "+(p[1]>=0?"+":"")+p[1].toFixed(3)+" ± "+p[2].toFixed(3)+(p[3]?" (significant)":" (not significant)"));
-    s.appendChild(T(cx,H-B+20,"cfg "+p[0]));});
-  bar(L+bw*2+bw*0.5+13,22,-.165,.047,a2,1,"merged model, cfg 3.0 vs 1.5: −0.165 ± 0.047 (significant, t = −3.48)");
-  function key(x,col,op,txt){s.appendChild(el("rect",{x:x,y:12,width:12,height:12,rx:3,fill:col,opacity:op}));
-    var t=T(x+18,22,txt,"lbl","start");s.appendChild(t);}
-  key(L,ac,.92,"RL model");key(L+106,a2,.92,"merged model");key(L+246,mu,.92,"solid = significant");key(L+404,mu,.32,"pale = not significant");
-  s.appendChild(T((L+W-R)/2,H-8,"guidance scale  ·  paired HumanBench change vs. cfg 1.5","lbl"));}
-
-function drawAxes(){var s=$("axischart");if(!s)return;s.innerHTML="";
-  var W=700,H=230,L=84,R=78,Tp=14,B=34,ac=cv("--accent"),good=cv("--good");
-  var A=[["face",.191],["body",.241],["hands",.758],["realism",.800]],max=.9,bh=(H-Tp-B)/A.length;
-  A.forEach(function(a,i){var y=Tp+bh*i+bh*.2,h=bh*.6,w=(W-L-R)*(a[1]/max);
-    s.appendChild(tip(el("rect",{x:L,y:y,width:w,height:h,rx:5,fill:i<2?good:ac,opacity:.85}),a[0]+": "+a[1].toFixed(3)+" below real"));
-    s.appendChild(T(L-10,y+h/2+4,a[0],"lbl","end"));s.appendChild(T(L+w+9,y+h/2+4,"−"+a[1].toFixed(2),null,"start"));});
-  s.appendChild(T(L+(W-L-R)/2,H-6,"gap below the real-photograph ceiling (1–5 scale)","lbl"));}
-
-function drawDis(){var s=$("disagreechart");if(!s)return;s.innerHTML="";
-  var W=700,H=320,Tp=58,B=48,ac=cv("--accent"),a2=cv("--accent-2");
-  var M=[["RL model",5.568,92.13,a2],["merge 50/50",5.740,96.35,ac],["merge IR+VQA",5.823,97.72,ac],["merge 30/70",5.794,97.81,ac]];
-  var xa=130,xb=440;
-  var yl=function(v){return Tp+(H-Tp-B)*(1-(v-5.5)/(5.88-5.5));},yr=function(v){return Tp+(H-Tp-B)*((v-90)/(99-90));};
-  s.appendChild(el("line",{x1:xa,x2:xa,y1:Tp-10,y2:H-B+8,class:"ax"}));s.appendChild(el("line",{x1:xb,x2:xb,y1:Tp-10,y2:H-B+8,class:"ax"}));
-  s.appendChild(T(xa,22,"FaceScore  ↑","lbl"));s.appendChild(T(xb,22,"face-region FID  ↓","lbl"));
-  s.appendChild(T(xa,38,"higher is better",null));s.appendChild(T(xb,38,"lower is better, drawn higher",null));
-  function dodge(arr){arr.sort(function(a,b){return a.y-b.y;});for(var i=1;i<arr.length;i++)if(arr[i].y<arr[i-1].y+15)arr[i].y=arr[i-1].y+15;return arr;}
-  var Lb=[],Rb=[];
-  M.forEach(function(m){var a=yl(m[1]),b=yr(m[2]);
-    s.appendChild(el("line",{x1:xa,x2:xb,y1:a,y2:b,stroke:m[3],"stroke-width":2.2,opacity:.55}));
-    s.appendChild(tip(el("circle",{cx:xa,cy:a,r:6,fill:m[3]}),m[0]+": FaceScore "+m[1]));
-    s.appendChild(tip(el("circle",{cx:xb,cy:b,r:6,fill:m[3]}),m[0]+": face-FID "+m[2]));
-    Lb.push({y:a,t:m[1].toFixed(2)});Rb.push({y:b,t:m[2].toFixed(1)+"  "+m[0],c:m[3]});});
-  dodge(Lb).forEach(function(l){s.appendChild(T(xa-12,l.y+4,l.t,null,"end"));});
-  dodge(Rb).forEach(function(r){s.appendChild(T(xb+12,r.y+4,r.t,null,"start"));});
-  s.appendChild(T(W/2,H-12,"crossing lines = the two metrics rank the models in opposite orders","lbl"));}
-
-function drawGate(){var s=$("gatechart");if(!s)return;s.innerHTML="";
-  var W=700,H=260,L=64,R=22,Tp=36,B=46,ac=cv("--accent"),mu=cv("--muted");
-  var G=[[1,0],[201,.0045],[401,.0098],[601,.0121],[801,.0140],[1001,.0167],[1201,.0178],[1401,.0215],[1601,.0271],[1801,.0342],
-         [2001,.0354],[2201,.0383],[2401,.0413],[2601,.0457],[2801,.0500],[3001,.0530],[3201,.0566],[3401,.0654],[3601,.0737],[3801,.0806],[4001,.0884]];
-  var mx=4200,hi=.1,xs=function(b){return L+(W-L-R)*(b/mx);},ys=function(v){return Tp+(H-Tp-B)*(1-v/hi);};
-  frame(s,W,H,L,R,Tp,B,0,hi,function(v){return v.toFixed(3);},4);
-  s.appendChild(el("line",{x1:L,x2:W-R,y1:ys(0),y2:ys(0),stroke:cv("--bad"),"stroke-width":1.4,"stroke-dasharray":"5 4"}));
-  s.appendChild(T(W-R-6,ys(0)-8,"a dead channel stays flat on this line",null,"end"));
-  var area="M"+xs(G[0][0])+" "+ys(0);G.forEach(function(p){area+=" L"+xs(p[0])+" "+ys(p[1]);});area+=" L"+xs(G[G.length-1][0])+" "+ys(0)+" Z";
-  s.appendChild(el("path",{d:area,fill:ac,opacity:.1}));
-  var d="";G.forEach(function(p,i){d+=(i?" L":"M")+xs(p[0])+" "+ys(p[1]);});
-  s.appendChild(el("path",{d:d,fill:"none",stroke:ac,"stroke-width":2.4,"stroke-linejoin":"round"}));
-  G.forEach(function(p){s.appendChild(tip(el("circle",{cx:xs(p[0]),cy:ys(p[1]),r:3.4,fill:ac}),"batch "+p[0]+": tanh(gate) = "+p[1].toFixed(4)));});
-  [0,1000,2000,3000,4000].forEach(function(b){s.appendChild(T(xs(b),H-B+20,String(b)));});
-  s.appendChild(T((L+W-R)/2,H-8,"training batch","lbl"));s.appendChild(T(14,14,"tanh(gate)","lbl","start"));}
-
-function drawAll(){drawHack();drawLat();drawSteps();drawCfg();drawAxes();drawDis();drawGate();}
-drawAll();
-try{matchMedia("(prefers-color-scheme:dark)").addEventListener("change",drawAll);}catch(e){}
+/* ---------------- architecture ---------------- */
+(function(){
+  var svg=$("arch"),det=$("arch-detail");
+  var INFO={
+    prompt:["Text prompt","The prompt, or the instruction when editing. MiniCPM reads it with its usual chat template.",["e1"]],
+    image:["Source image","Only used for editing. MiniCPM's vision encoder reads it, so the model knows what is in the picture before it changes it.",["e2"]],
+    vlm:["MiniCPM-V-4.6, frozen, 1.30B","A vision encoder and a Qwen3.5 language model. Its last hidden layer describes what to draw. Because we never train it, it keeps its full image understanding.",["e1","e2","e3"]],
+    conn:["Connector, trained, 8.8M","Turns the VLM's output into the input the diffusion model expects.",["e3","e4"]],
+    noise:["Random noise","Every image starts as random noise with the same shape as the latent, 32 channels at 16×16.",["e5"]],
+    dit:["SANA-600M, trained, 591.7M","28 transformer blocks that remove the noise step by step while looking at the connector's output. It works on a 16×16 latent, which is 256 tokens. We sample with 12 steps and guidance 1.5.",["e4","e5","e6"]],
+    dec:["DC-AE decoder, frozen, 159M","Turns the 16×16 latent into a 512×512 image in 29 ms.",["e6","e7","e8"]],
+    head:["1024px head, optional, 106.5M","Reads the decoder's last internal features and outputs a 1024×1024 image. It adds 58 ms.",["e8","e9"]],
+    o512:["512×512 image","817 ms from prompt to image with 20 steps.",["e7"]],
+    o1024:["1024×1024 image","874 ms from prompt to image with 20 steps.",["e9"]]
+  };
+  function on(k){
+    qa(svg,".on").forEach(function(n){n.classList.remove("on");});
+    if(!k){svg.classList.remove("focused");det.textContent="Click or tap a block to see what it does.";return;}
+    svg.classList.add("focused");
+    var nd=svg.querySelector('[data-n="'+k+'"]');if(nd)nd.classList.add("on");
+    INFO[k][2].forEach(function(e){var g=svg.querySelector('[data-e="'+e+'"]');if(g)g.classList.add("on");});
+    det.textContent="";det.appendChild(mk("b",{},INFO[k][0]+". "));det.appendChild(document.createTextNode(INFO[k][1]));
+  }
+  qa(svg,".node").forEach(function(n){
+    var k=n.getAttribute("data-n");
+    n.addEventListener("click",function(e){e.stopPropagation();on(k);});
+    n.addEventListener("focus",function(){on(k);});
+    n.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();on(k);}});
+  });
+  document.addEventListener("click",function(e){if(!svg.contains(e.target))on(null);});
+})();
 })();
 </script>
 </body>
