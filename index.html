@@ -327,7 +327,7 @@ footer a{color:var(--fg-2)}
 <ul>
   <li><b>Generation and editing in one model.</b> The same weights create images from text and edit existing images from instructions.</li>
   <li><b>A stronger reader.</b> A frozen MiniCPM-V-4.6 reads the prompt, and the source image when editing. We only train a small connector and the diffusion transformer.</li>
-  <li><b>Unified RL.</b> One reinforcement learning (RL) run improves generation and editing together, with rewards that check objects, read the whole prompt back from the image, judge edits and check rendered text.</li>
+  <li><b>Unified RL.</b> One reinforcement learning (RL) run improves generation and editing together. Its rewards target object presence, counting, long-form prompts, image editing and text-rich images.</li>
   <li><b>Sampler settings tuned for people.</b> We sample with 12 steps and guidance 1.5. People look more natural than with the more common 20 steps and higher guidance, and each image takes less time.</li>
   <li><b>1024×1024 output for 7% more time.</b> A small add-on to the image decoder outputs four times the pixels without changing the diffusion model.</li>
 </ul>
