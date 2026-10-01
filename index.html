@@ -327,7 +327,7 @@ footer a{color:var(--fg-2)}
 <ul>
   <li><b>Generation and editing in one model.</b> The same weights create images from text and edit existing images from instructions.</li>
   <li><b>A stronger reader.</b> A frozen MiniCPM-V-4.6 reads the prompt, and the source image when editing. We only train a small connector and the diffusion transformer.</li>
-  <li><b>Reinforcement learning on both tasks.</b> One training run improves generation and editing together, with rewards that check objects, read the whole prompt back from the image, judge edits and check rendered text.</li>
+  <li><b>Unified RL.</b> One reinforcement learning (RL) run improves generation and editing together, with rewards that check objects, read the whole prompt back from the image, judge edits and check rendered text.</li>
   <li><b>Sampler settings tuned for people.</b> We sample with 12 steps and guidance 1.5. People look more natural than with the more common 20 steps and higher guidance, and each image takes less time.</li>
   <li><b>1024×1024 output for 7% more time.</b> A small add-on to the image decoder outputs four times the pixels without changing the diffusion model.</li>
 </ul>
@@ -507,7 +507,7 @@ footer a{color:var(--fg-2)}
 
 <h3>Learning from rewards</h3>
 <p>For the second stage we use GRPO, adapted to diffusion models as in <a href="https://arxiv.org/abs/2505.05470">Flow-GRPO</a>. For each prompt the model makes a group of 12 images, and we score each one. Training then moves the model toward the images that scored above their group's average. The VLM stays frozen, so each prompt only has to be read once per group.</p>
-<p>Generation and editing prompts share the same training run, and each image gets the rewards that fit its task.</p>
+<p>Generation and editing prompts share the same training run, which is why we call it unified RL. Each image gets the rewards that fit its task.</p>
 <ul>
   <li><b>Objects.</b> A detector checks for the right objects with the right counts, colors and positions, and gives partial credit.</li>
   <li><b>The whole prompt.</b> A frozen Qwen3-VL-8B scores how likely the full prompt is, given the image.<label for="sn-rib" class="sn-ref"></label><input type="checkbox" id="sn-rib" class="sn-toggle"><span class="sidenote">This reward comes from "Read It Back: Pretrained MLLMs Are Zero-Shot Reward Models for Text-to-Image Generation" (arXiv 2607.11886).</span> This works for long, detailed prompts that the detector can't check.</li>
