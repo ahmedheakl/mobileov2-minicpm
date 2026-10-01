@@ -69,8 +69,8 @@ main{padding-inline:16px;padding-block:0}
 .meta{font-family:var(--sans);font-size:15px;color:var(--muted);margin-top:14px}
 .cover{max-width:980px;margin:36px auto 0}
 .cover .row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.cover picture{display:block}
-.cover img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:6px;background:var(--n2)}
+.cover button{display:block;padding:0;border:0;background:var(--n2);border-radius:6px;overflow:hidden;cursor:zoom-in}
+.cover img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover}
 .cover p{font-family:var(--sans);font-size:14px;line-height:1.5;color:var(--muted);text-align:center;margin:12px auto 0;max-width:660px}
 @media (max-width:640px){.cover .row{grid-template-columns:repeat(2,1fr)}}
 
@@ -130,7 +130,6 @@ figcaption a{color:var(--fg-2)}
 .chip[aria-pressed="true"]{background:var(--fg);border-color:var(--fg);color:var(--bg)}
 .swipe{display:none;font-family:var(--sans);font-size:12.5px;color:var(--faint);margin:0 0 6px;text-align:right}
 @media (max-width:640px){.swipe{display:block}}
-.note-line{font-family:var(--sans);font-size:14px;color:var(--fg-2);margin:12px 0 0;line-height:1.5;text-align:center}
 
 /* results teaser table */
 .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -180,9 +179,10 @@ table.plain{width:100%;border-collapse:collapse;font-family:var(--sans);font-siz
 .seeds .pick{position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:var(--s1);box-shadow:0 0 0 2px var(--bg)}
 .prompt-text{font-family:var(--sans);font-size:14.5px;line-height:1.5;color:var(--fg-2);margin:14px 0 0}
 .prompt-text .k{display:block;font-size:12.5px;color:var(--muted);margin-bottom:2px}
-.four{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:6px}
-.four button{padding:0;border:0;background:var(--n2);border-radius:6px;overflow:hidden;cursor:zoom-in;aspect-ratio:1}
-.four img{display:block;width:100%;height:100%;object-fit:cover}
+.faces{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.faces button{padding:0;border:0;background:var(--n2);border-radius:6px;overflow:hidden;cursor:zoom-in;aspect-ratio:1;display:block}
+.faces img{display:block;width:100%;height:100%;object-fit:cover}
+@media (max-width:480px){.faces{grid-template-columns:repeat(2,1fr);gap:6px}}
 
 /* before/after slider */
 .cmp{position:relative;width:100%;aspect-ratio:1;border-radius:6px;overflow:hidden;background:var(--n2);touch-action:pan-y;cursor:ew-resize;user-select:none;-webkit-user-select:none}
@@ -266,12 +266,12 @@ footer a{color:var(--fg-2)}
 
 <div class="cover">
   <div class="row">
-    <picture><source srcset="assets/gif/01_portrait.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/01_portrait.gif" width="320" height="320" alt="A portrait of an elderly fisherman in a yellow raincoat forming out of noise"></picture>
-    <picture><source srcset="assets/gif/02_wildlife.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/02_wildlife.gif" width="320" height="320" alt="A red fox in a snowy meadow forming out of noise"></picture>
-    <picture><source srcset="assets/gif/08_fantasy.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/08_fantasy.gif" width="320" height="320" alt="A whale floating over a seaside town forming out of noise"></picture>
-    <picture><source srcset="assets/gif/10_cityscape.jpg" media="(prefers-reduced-motion: reduce)"><img src="assets/gif/10_cityscape.gif" width="320" height="320" alt="A rainy neon-lit city street forming out of noise"></picture>
+    <button type="button" data-k="0"><img src="assets/cover/portrait_05.jpg" width="512" height="512" alt="A smiling grandfather with a white beard and a tweed flat cap in golden autumn light"></button>
+    <button type="button" data-k="1"><img src="assets/gen/02_wildlife_v2_0.jpg" width="512" height="512" alt="A red fox standing in a snowy meadow at dawn"></button>
+    <button type="button" data-k="2"><img src="assets/gen/08_fantasy_v2_1.jpg" width="512" height="512" alt="A whale drifting through the sky above a seaside town while villagers look up"></button>
+    <button type="button" data-k="3"><img src="assets/gen/10_cityscape_v2_2.jpg" width="512" height="512" alt="A figure with an umbrella walking down a rainy neon-lit street at night"></button>
   </div>
-  <p>Mobile-O v2 turning random noise into an image. Each clip steps through the sampling process, from pure noise to the finished picture.</p>
+  <p>Four images made by Mobile-O v2 from text prompts. Click one to see it larger with its prompt.</p>
 </div>
 
 <div class="shell">
@@ -283,9 +283,8 @@ footer a{color:var(--fg-2)}
     <li><a href="#results">Results</a></li>
     <li><a href="#examples">Examples</a></li>
     <li><a href="#training">Training</a></li>
-    <li><a href="#settings">Sampler settings</a></li>
     <li><a href="#hires">1024×1024 output</a></li>
-    <li><a href="#faces">Faces</a></li>
+    <li><a href="#faces">Portraits</a></li>
     <li><a href="#cite">Citation</a></li>
   </ol>
 </nav>
@@ -294,7 +293,7 @@ footer a{color:var(--fg-2)}
 
 <p>Mobile-O v2 is a small model that creates images from text and edits images from written instructions. It's the second version of <a href="https://arxiv.org/abs/2602.20161">Mobile-O</a>, and like the first one, it's built with phones in mind. The diffusion model that draws each image works on only 256 tokens, and every change we made kept it that way.</p>
 
-<p>v2 pairs a frozen <a href="https://huggingface.co/openbmb/MiniCPM-V-4_6">MiniCPM-V-4.6</a> vision-language model (VLM) with a <a href="https://github.com/NVlabs/Sana">SANA</a> diffusion transformer, for a total of 1.9B parameters. It makes a 512×512 image in about 0.8 seconds on one desktop GPU.<label for="sn-gpu" class="sn-ref"></label><input type="checkbox" id="sn-gpu" class="sn-toggle"><span class="sidenote">One NVIDIA RTX PRO 6000, one image at a time, 20 sampler steps.</span> Compared with v1, it follows prompts more closely, handles long prompts better, makes more realistic images and edits images much more reliably. On GenEval it also beats Janus and JanusFlow, two slightly larger models that can both understand and generate images.</p>
+<p>v2 pairs an efficient vision-language model (VLM), which stays frozen, with an efficient diffusion transformer (DiT), for a total of 1.9B parameters. It makes a 512×512 image in about 0.8 seconds on one desktop GPU.<label for="sn-gpu" class="sn-ref"></label><input type="checkbox" id="sn-gpu" class="sn-toggle"><span class="sidenote">One NVIDIA RTX PRO 6000, one image at a time, 20 sampler steps.</span> Compared with v1, it follows prompts more closely, handles long prompts better, makes more realistic images and edits images much more reliably. On GenEval it also beats Janus and JanusFlow, two slightly larger models that can both understand and generate images, and it is ahead of both on all three understanding benchmarks in Figure 1.</p>
 
 <figure id="fig-teaser">
   <p class="swipe">Swipe the table to see every model.</p>
@@ -312,21 +311,23 @@ footer a{color:var(--fg-2)}
       <tr><th scope="row">GenEval<small>Objects, counts, colors, positions</small></th><td class="us">0.91</td><td>0.79</td><td>0.63</td><td>0.61</td><td>0.69</td><td>0.55</td></tr>
       <tr><th scope="row">DPG-Bench<small>Long, detailed prompts</small></th><td class="us">80.7</td><td>73.9</td><td>80.1</td><td>79.7</td><td class="na">–</td><td>74.7</td></tr>
       <tr><th scope="row">ImgEdit<small>Editing from instructions, judged by GPT-4o</small></th><td class="us">3.7</td><td>2.5</td><td class="na">–</td><td class="na">–</td><td class="na">–</td><td class="na">–</td></tr>
-      <tr><th scope="row">MMMU<small>Understanding images</small></th><td class="us">53.8</td><td>34.6</td><td>29.3</td><td>30.5</td><td>27.4</td><td class="na">–</td></tr>
+      <tr><th scope="row">MMMU<small>College-level questions about images</small></th><td class="us">53.8</td><td>34.6</td><td>29.3</td><td>30.5</td><td>27.4</td><td class="na">–</td></tr>
+      <tr><th scope="row">TextVQA<small>Reading text in images</small></th><td class="us">78.5</td><td>67.8</td><td>55.5</td><td>50.2</td><td>41.2</td><td class="na">–</td></tr>
+      <tr><th scope="row">POPE<small>Avoiding made-up objects</small></th><td class="us">89.1</td><td>86.4</td><td>88.0</td><td>87.0</td><td>84.5</td><td class="na">–</td></tr>
     </tbody>
   </table></div>
-  <figcaption>Mobile-O v2 compared with Mobile-O v1, three other models of similar size that both understand and generate images, and the text-to-image model SDXL. Sizes count the vision encoder, language model and diffusion model. We measured both Mobile-O models ourselves with the same code, except v1's ImgEdit score, which comes from its paper. The other models' numbers come from their papers.<label for="sn-v1" class="sn-ref"></label><input type="checkbox" id="sn-v1" class="sn-toggle"><span class="sidenote">The v1 paper reports 0.74 on GenEval. Our evaluation of v1, using its own sampling code, gives 0.79, and that is the number shown here. For Show-o we list its CLIP-ViT version.</span> A dash means the model can't do that task or its paper doesn't report it.</figcaption>
+  <figcaption>Mobile-O v2 compared with Mobile-O v1, three other models of similar size that both understand and generate images, and the text-to-image model SDXL. Sizes count the vision encoder, language model and diffusion model. We measured v2 ourselves. For v1 we measured GenEval and DPG-Bench with the same code as v2, and its other scores come from its paper, as do the other models' numbers.<label for="sn-v1" class="sn-ref"></label><input type="checkbox" id="sn-v1" class="sn-toggle"><span class="sidenote">The v1 paper reports 0.74 on GenEval. Our evaluation of v1, using its own sampling code, gives 0.79, and that is the number shown here. For Show-o we list its CLIP-ViT version.</span> A dash means the model can't do that task or its paper doesn't report it.</figcaption>
 </figure>
 
 <figure id="fig-vs">
   <div id="vs"></div>
-  <figcaption>Mobile-O v1 (top) and v2 (bottom) on six of our test prompts, the best of four images from each model. Click an image to see it larger with its full prompt. v2 follows the prompts more closely. Its pickup truck towers over the Porsche, as the prompt asks, and its tree grows through the chain-link fence. It also includes details that v1 leaves out, such as the dew on the dragonfly, the brain coral on the reef and the seabirds around the whale. Figure 6 has all 20 prompts with every image from both models.</figcaption>
+  <figcaption>Mobile-O v1 (top) and v2 (bottom) on six of our test prompts, the best of four images from each model. Click an image to see it larger with its full prompt. v2 includes details from the prompts that v1 leaves out or barely shows, such as the woman's freckles, the dew on the dragonfly, the seabirds around the whale and the morning mist between the hills. Figure 6 has every image from both models for these six prompts and twelve more.</figcaption>
 </figure>
 
 <h2 id="new">What's new in v2</h2>
 <ul>
   <li><b>Generation and editing in one model.</b> The same weights create images from text and edit existing images from instructions.</li>
-  <li><b>A stronger reader.</b> A frozen MiniCPM-V-4.6 reads the prompt, and the source image when editing. We only train a small connector and the diffusion transformer.</li>
+  <li><b>A stronger reader.</b> A frozen, efficient VLM reads the prompt, and the source image when editing. We only train a small connector and the DiT.</li>
   <li><b>Unified RL.</b> One reinforcement learning (RL) run improves generation and editing together. Its rewards target object presence, counting, long-form prompts, image editing and text-rich images.</li>
   <li><b>1024×1024 output for 7% more time.</b> A small add-on to the image decoder outputs four times the pixels without changing the diffusion model.</li>
 </ul>
@@ -338,21 +339,20 @@ footer a{color:var(--fg-2)}
     <li><a href="#results">Results</a></li>
     <li><a href="#examples">Examples</a></li>
     <li><a href="#training">Training</a></li>
-    <li><a href="#settings">Sampler settings</a></li>
     <li><a href="#hires">1024×1024 output</a></li>
-    <li><a href="#faces">Faces</a></li>
+    <li><a href="#faces">Portraits</a></li>
     <li><a href="#cite">Citation</a></li>
   </ol>
 </nav>
 
 <h2 id="how">How it works</h2>
-<p>Mobile-O v2 has four parts. Two of them come from existing models and stay frozen, and we train the other two.</p>
+<p>Mobile-O v2 has four parts. Two of them stay frozen, and we train the other two.</p>
 
 <figure id="fig-arch">
   <div class="panel">
     <p class="swipe">Swipe to see the whole diagram.</p>
     <div class="arch-scroll">
-<svg class="arch" id="arch" viewBox="0 0 700 230" role="img" aria-label="Mobile-O v2 pipeline: the prompt and source image go into MiniCPM-V-4.6, then the connector, the SANA diffusion transformer and the DC-AE decoder; an optional head makes 1024px images">
+<svg class="arch" id="arch" viewBox="0 0 700 230" role="img" aria-label="Mobile-O v2 pipeline: the prompt and source image go into an efficient VLM, then the connector, an efficient diffusion transformer and the decoder; an optional head makes 1024px images">
 <defs>
   <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--n3)"/></marker>
   <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--s1)"/></marker>
@@ -377,10 +377,10 @@ footer a{color:var(--fg-2)}
   <text x="48" y="170" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Source image</text>
   <text x="48" y="186" text-anchor="middle" style="font-size:11px;fill:var(--muted)">when editing</text>
 </g>
-<g class="node" data-n="vlm" tabindex="0" role="button" aria-label="MiniCPM-V-4.6, frozen">
+<g class="node" data-n="vlm" tabindex="0" role="button" aria-label="Efficient VLM, frozen">
   <rect class="box" x="124" y="24" width="116" height="190" rx="10" style="fill:var(--hover);stroke:var(--n1);stroke-width:1.2"/>
-  <text x="182" y="50" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">MiniCPM-V-4.6</text>
-  <text x="182" y="66" text-anchor="middle" style="font-size:11px;fill:var(--muted)">frozen · 1.30B</text>
+  <text x="182" y="50" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Efficient VLM</text>
+  <text x="182" y="66" text-anchor="middle" style="font-size:11px;fill:var(--muted)">frozen</text>
   <rect x="136" y="82" width="92" height="44" rx="6" style="fill:var(--bg);stroke:var(--rule)"/>
   <text x="182" y="101" text-anchor="middle" style="font-size:11px;fill:var(--fg-2)">language</text>
   <text x="182" y="115" text-anchor="middle" style="font-size:11px;fill:var(--fg-2)">model</text>
@@ -392,28 +392,28 @@ footer a{color:var(--fg-2)}
 <g class="node" data-n="conn" tabindex="0" role="button" aria-label="Connector, trained">
   <rect class="box" x="266" y="84" width="96" height="70" rx="8" style="fill:var(--bg);stroke:var(--s1);stroke-width:1.6"/>
   <text x="314" y="112" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Connector</text>
-  <text x="314" y="128" text-anchor="middle" style="font-size:11px;fill:var(--muted)">trained · 8.8M</text>
+  <text x="314" y="128" text-anchor="middle" style="font-size:11px;fill:var(--muted)">trained</text>
 </g>
 <g class="node" data-n="noise" tabindex="0" role="button" aria-label="Starting noise">
   <rect class="box" x="390" y="0" width="112" height="34" rx="8" style="fill:var(--bg);stroke:var(--n1);stroke-width:1.2"/>
   <text x="446" y="21" text-anchor="middle" style="font-size:12px;fill:var(--fg-2)">random noise</text>
 </g>
-<g class="node" data-n="dit" tabindex="0" role="button" aria-label="SANA diffusion transformer, trained">
+<g class="node" data-n="dit" tabindex="0" role="button" aria-label="Efficient diffusion transformer, trained">
   <rect class="box" x="390" y="60" width="112" height="122" rx="10" style="fill:var(--bg);stroke:var(--s1);stroke-width:1.6"/>
-  <text x="446" y="88" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">SANA-600M</text>
+  <text x="446" y="88" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Efficient DiT</text>
   <text x="446" y="104" text-anchor="middle" style="font-size:11px;fill:var(--muted)">diffusion transformer</text>
-  <text x="446" y="120" text-anchor="middle" style="font-size:11px;fill:var(--muted)">trained · 591.7M</text>
+  <text x="446" y="120" text-anchor="middle" style="font-size:11px;fill:var(--muted)">trained</text>
   <text x="446" y="156" text-anchor="middle" style="font-size:12px;font-weight:600;fill:var(--s1)">256 tokens</text>
 </g>
-<g class="node" data-n="dec" tabindex="0" role="button" aria-label="DC-AE decoder, frozen">
+<g class="node" data-n="dec" tabindex="0" role="button" aria-label="Decoder, frozen">
   <rect class="box" x="530" y="60" width="104" height="52" rx="8" style="fill:var(--hover);stroke:var(--n1);stroke-width:1.2"/>
-  <text x="582" y="82" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">DC-AE decoder</text>
-  <text x="582" y="98" text-anchor="middle" style="font-size:11px;fill:var(--muted)">frozen · 159M</text>
+  <text x="582" y="82" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">Decoder</text>
+  <text x="582" y="98" text-anchor="middle" style="font-size:11px;fill:var(--muted)">frozen</text>
 </g>
 <g class="node" data-n="head" tabindex="0" role="button" aria-label="1024px head, optional">
   <rect class="box" x="530" y="150" width="104" height="52" rx="8" style="fill:var(--bg);stroke:var(--s1);stroke-width:1.6"/>
   <text x="582" y="172" text-anchor="middle" style="font-size:13px;font-weight:600;fill:var(--fg)">1024px head</text>
-  <text x="582" y="188" text-anchor="middle" style="font-size:11px;fill:var(--muted)">optional · 106.5M</text>
+  <text x="582" y="188" text-anchor="middle" style="font-size:11px;fill:var(--muted)">optional</text>
 </g>
 <g class="node" data-n="o512" tabindex="0" role="button" aria-label="512 by 512 image">
   <rect class="box" x="652" y="68" width="36" height="36" rx="4" style="fill:var(--n2);stroke:var(--n1)"/>
@@ -430,11 +430,11 @@ footer a{color:var(--fg-2)}
   <figcaption>The Mobile-O v2 pipeline. Blocks filled in gray are frozen, and blocks outlined in blue are trained.</figcaption>
 </figure>
 
-<p><b>MiniCPM-V-4.6 reads the input.</b> It reads the prompt, and when editing it also looks at the source image. We use its last hidden layer as the description of what to draw. It stays frozen, so it keeps all of its ability for image understanding.</p>
-<p><b>The connector translates.</b> A small network with 8.8M parameters turns that description into the form the diffusion model expects.</p>
-<p><b>The diffusion transformer draws.</b> SANA-600M starts from random noise and removes it step by step until a small 16×16 latent image is left. We fine-tune all of it.</p>
-<p><b>The decoder makes the pixels.</b> The frozen DC-AE decoder turns the 16×16 latent into a 512×512 image.</p>
-<p>The token count shaped most of the design. A 512×512 image becomes a 16×16 latent, which the transformer processes as 256 tokens. The transformer's cost grows with the number of tokens, and on a phone that decides how long you wait, so every improvement in this post had to work without adding tokens.</p>
+<p><b>The VLM reads the input.</b> It reads the prompt, and when editing it also looks at the source image. We use its last hidden layer as the description of what to draw. It stays frozen, so it keeps all of its ability for image understanding.</p>
+<p><b>The connector translates.</b> A small network turns that description into the form the DiT expects.</p>
+<p><b>The DiT draws.</b> It starts from random noise and removes it step by step until a small 16×16 latent image is left. We fine-tune all of it.</p>
+<p><b>The decoder makes the pixels.</b> A frozen decoder turns the 16×16 latent into a 512×512 image.</p>
+<p>The token count shaped most of the design. A 512×512 image becomes a 16×16 latent, which the DiT processes as 256 tokens. Its cost grows with the number of tokens, and on a phone that decides how long you wait, so every improvement in this post had to work without adding tokens.</p>
 
 <h2 id="results">Results</h2>
 <p>We ran v1 and v2 through the same evaluation code, both with 20 sampler steps and guidance 1.5. v2 is ahead on every benchmark we ran, and its biggest GenEval gains are in the three categories where v1 was weakest: counting, putting objects in the right position, and giving each object the right color.</p>
@@ -461,7 +461,7 @@ footer a{color:var(--fg-2)}
 
 <h2 id="examples">Examples</h2>
 <h3>Generating images</h3>
-<p>Figure 6 has all 20 prompts from our comparison and every image both models made for them, four per prompt from each model. The last five prompts are long ones from DPG-Bench.</p>
+<p>Figure 6 has 18 of our test prompts and every image both models made for them, four per prompt from each model. The last three prompts are long ones from DPG-Bench.</p>
 
 <figure id="fig-gen">
   <div class="panel" id="gen">
@@ -484,7 +484,7 @@ footer a{color:var(--fg-2)}
 </figure>
 
 <h3>Editing images</h3>
-<p>v2 edits an image from a written instruction. Figure 7 shows eleven kinds of edits from the ImgEdit and GEdit benchmarks, next to v1's result for the same instruction. We didn't pick these; each one is the first image the model made.</p>
+<p>v2 edits an image from a written instruction. Figure 7 shows nine kinds of edits from the ImgEdit and GEdit benchmarks, next to v1's result for the same instruction.</p>
 
 <figure id="fig-edit">
   <div class="panel" id="edit">
@@ -502,7 +502,7 @@ footer a{color:var(--fg-2)}
 <p>We trained v2 in two stages. Supervised fine-tuning teaches the model from examples, and reinforcement learning then improves it using rewards.</p>
 
 <h3>Learning from examples</h3>
-<p>We first pretrain the connector and the diffusion transformer on text-image pairs. We then fine-tune them on image generation, then on editing, and finally on an even mix of the two, so that one model learns both tasks without either one crowding out the other.</p>
+<p>We first pretrain the connector and the DiT on text-image pairs. We then fine-tune them on image generation, then on editing, and finally on an even mix of the two, so that one model learns both tasks without either one crowding out the other.</p>
 
 <h3>Learning from rewards</h3>
 <p>For the second stage we use GRPO, adapted to diffusion models as in <a href="https://arxiv.org/abs/2505.05470">Flow-GRPO</a>. For each prompt the model makes a group of 12 images, and we score each one. Training then moves the model toward the images that scored above their group's average. The VLM stays frozen, so each prompt only has to be read once per group.</p>
@@ -515,43 +515,9 @@ footer a{color:var(--fg-2)}
 </ul>
 <p>These rewards come on very different scales. We standardize each one within its own group of samples before adding them up, so that no single reward dominates. After 500 steps of this training, GenEval rose from 0.84 to 0.91, DPG-Bench from 79.1 to 80.7 and ImageReward from 0.65 to 0.76. Both editing benchmarks went up as well, ImgEdit from 2.99 to 3.09 and GEdit from 6.38 to 6.52.<label for="sn-judge" class="sn-ref"></label><input type="checkbox" id="sn-judge" class="sn-toggle"><span class="sidenote">During development we score edits with a local Qwen2.5-VL-72B judge, which gives lower scores than GPT-4o. That is why these ImgEdit numbers are lower than the GPT-4o score in Figure 1 (3.7).</span></p>
 
-<h2 id="settings">Sampler settings</h2>
-<p>Two settings control how an image is sampled: the number of steps and the guidance scale. We chose both by looking at people, since problems with skin and faces are the easiest to notice.</p>
-<p>To compare settings fairly, we built a small benchmark we call HumanBench, with 38 prompts that show people and four images for each. A vision-language model (Qwen2.5-VL-72B) scores every image from 1 to 5 for hands, faces, bodies and realism. Every setting uses the same prompts and the same starting noise, so two images differ only in the setting.</p>
-
-<h3>Why 12 steps?</h3>
-<p>We expected more steps to give better images, but for people that wasn't the case. HumanBench scores peaked between 8 and 16 steps, and at 12 steps people scored higher than at 20 while each image needed 40% less work. With more steps, skin starts to look harsh and wrinkles get deeper; try 40 steps in Figure 8.</p>
-
-<figure id="fig-steps">
-  <div class="panel" id="steps">
-    <div class="ctl"><span>Prompt</span><div class="chips" data-role="prompts" role="group" aria-label="Prompt"></div></div>
-    <div class="cmp-wrap"><div class="cmp" tabindex="0" role="slider" aria-label="Drag to compare" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
-      <img class="a" alt=""><img class="b" alt=""><span class="lab l"></span><span class="lab r"></span><span class="bar"></span><span class="knob"></span>
-    </div></div>
-    <div class="chart"><svg class="ch" viewBox="0 0 620 210" role="img" aria-label="Average HumanBench score change compared with 20 steps, for 6 to 40 steps"></svg><div class="tip" hidden></div></div>
-    <div class="ctl" style="margin-top:6px"><span>Right side</span><div class="chips" data-role="steps" role="group" aria-label="Step count"></div></div>
-  </div>
-  <figcaption>Left, 20 steps. Right, the step count you pick, on the chart or below it. Both images use the same prompt and starting noise. The chart shows how the average HumanBench score changed compared with 20 steps, over 152 images.</figcaption>
-</figure>
-
-<h3>Why guidance 1.5?</h3>
-<p>Guidance<label for="sn-cfg" class="sn-ref"></label><input type="checkbox" id="sn-cfg" class="sn-toggle"><span class="sidenote">At each step the model makes two predictions, one with the prompt and one without, and the guidance scale sets how far to push the result toward the prompt. A scale of 1 means no guidance.</span> sets how strongly the model sticks to the prompt. SANA's own default is 4.5, but in our tests higher guidance pushed skin toward red and exaggerated freckles and wrinkles. Going from 1.5 to 3.0 lowered the HumanBench realism score by 0.16 on its 1-to-5 scale, while 2.0 made almost no difference, so we use 1.5.</p>
-
-<figure id="fig-cfg">
-  <div class="panel" id="cfg">
-    <div class="ctl"><span>Prompt</span><div class="chips" data-role="prompts" role="group" aria-label="Prompt"></div></div>
-    <div class="ctl"><span>Right side</span><div class="chips" data-role="scale" role="group" aria-label="Guidance scale"></div></div>
-    <div class="cmp-wrap"><div class="cmp" tabindex="0" role="slider" aria-label="Drag to compare" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
-      <img class="a" alt=""><img class="b" alt=""><span class="lab l"></span><span class="lab r"></span><span class="bar"></span><span class="knob"></span>
-    </div></div>
-    <p class="note-line" data-role="readout" aria-live="polite"></p>
-  </div>
-  <figcaption>Left, guidance 1.5. Right, the value you pick. Both images use the same prompt, starting noise and number of steps (20).</figcaption>
-</figure>
-
 <h2 id="hires">1024×1024 output</h2>
-<p>To generate a 1024×1024 image directly, the diffusion model would need a 32×32 latent, which means four times as many tokens and roughly four times the work. So we add the extra pixels afterwards. A small network, the 1024px head (106.5M parameters), reads the decoder's last internal features and adds fine detail on top of a plain 2× upscale of the 512px image.</p>
-<p>The diffusion model doesn't change, and neither does the content of the image, so our benchmark scores stay the same at 1024px. Figure 10 shows what it costs in time.</p>
+<p>To generate a 1024×1024 image directly, the diffusion model would need a 32×32 latent, which means four times as many tokens and roughly four times the work. So we add the extra pixels afterwards. A small network, which we call the 1024px head, reads the decoder's last internal features and adds fine detail on top of a plain 2× upscale of the 512px image.</p>
+<p>The diffusion model doesn't change, and neither does the content of the image, so our benchmark scores stay the same at 1024px. Figure 8 shows what it costs in time.</p>
 
 <figure id="fig-lat">
   <div class="chart" id="chart-lat"><svg class="ch" viewBox="0 0 660 128" role="img" aria-label="Time per image: 817 ms at 512 by 512 and 874 ms at 1024 by 1024"></svg><div class="tip" hidden></div></div>
@@ -559,16 +525,12 @@ footer a{color:var(--fg-2)}
   <figcaption>Time to make one image with 20 steps on one desktop GPU. The head replaces the 29 ms decode with an 86 ms step, so a 1024px image takes 874 ms instead of 817 ms. That's 7% more time for four times the pixels.</figcaption>
 </figure>
 
-<h2 id="faces">Faces</h2>
-<p>Figure 11 shows 16 portrait prompts, several of them written to be hard: deep wrinkles, freckles, glasses reflecting a window, hair blowing across a face, two faces cheek to cheek and a baby on a parent's shoulder. We show every image, four per prompt, made with 12 steps and guidance 1.5.</p>
+<h2 id="faces">Portraits</h2>
+<p>Small mistakes are easiest to see on faces, so we end with twelve portraits made by v2. They cover a range of ages, skin tones and lighting, from a baby on a parent's shoulder to a man in a dark coat against a black background.<label for="sn-steps" class="sn-ref"></label><input type="checkbox" id="sn-steps" class="sn-toggle"><span class="sidenote">These portraits use 12 sampler steps instead of the 20 used elsewhere in this post, which gives skin a more natural texture.</span></p>
 
 <figure id="fig-faces">
-  <div class="panel" id="faces-viewer">
-    <div class="strip" role="group" aria-label="Choose a prompt"></div>
-    <div class="four"></div>
-    <p class="prompt-text"></p>
-  </div>
-  <figcaption>All four images for each prompt, with nothing picked. Click an image to see it larger.</figcaption>
+  <div class="faces" id="faces-grid"></div>
+  <figcaption>Portraits from Mobile-O v2. For each prompt the model made eight images, and we show the one we liked best. Click an image to see it larger with its prompt.</figcaption>
 </figure>
 
 <h2 id="cite">Citation</h2>
@@ -592,7 +554,7 @@ footer a{color:var(--fg-2)}
 
 <footer><div class="in">
   <p><b style="color:var(--fg-2)">Mobile-O v2</b> · September 2026 · <a href="https://arxiv.org/abs/2602.20161">Mobile-O v1 paper</a></p>
-  <p>GenEval, DPG-Bench and the MJHQ-30K measures (FID, CLIP score, ImageReward) use their official code.</p>
+  <p>GenEval, DPG-Bench and the MJHQ-30K measures (FID, CLIP score, ImageReward) use their official code. We ran the understanding benchmarks for v2 with VLMEvalKit.</p>
 </div></footer>
 
 <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Image viewer" hidden>
@@ -608,34 +570,44 @@ function $(id){return document.getElementById(id);}
 function qa(root,sel){return Array.prototype.slice.call(root.querySelectorAll(sel));}
 function mk(tag,attrs,text){var e=document.createElement(tag);for(var k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;return e;}
 function sv(tag,attrs,text){var e=document.createElementNS(NS,tag);for(var k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;return e;}
-function fmt(v,d){var s=Math.abs(v).toFixed(d);return(v<0?"−":v>0?"+":"")+s;}
 
 /* ---------------- data, copied from the evaluation outputs ---------------- */
 var GEN=[
- {id:"01_portrait",name:"Fisherman",k1:1,k2:0,p:"A close-up portrait of an elderly fisherman with a weathered face and a short white beard, wearing a bright yellow raincoat. Warm golden hour light rakes across his cheek from the left, leaving the right side in soft shadow. The harbour behind him is thrown far out of focus into blue-grey bokeh."},
  {id:"02_wildlife",name:"Fox in the snow",k1:1,k2:0,p:"A red fox standing alert in a snow-covered meadow at dawn, its orange fur vivid against the white ground, breath visible in the cold air. Bare birch trunks recede into soft mist behind it. Shot on a telephoto lens with a shallow depth of field."},
+ {id:"c01_freckles_window",name:"Freckles by a window",k1:2,k2:0,p:"A smiling young woman with freckles and auburn hair in a cream knit sweater, sitting by a window in soft morning light, shallow depth of field."},
  {id:"03_landscape",name:"Mountain valley",k1:2,k2:3,p:"A vast mountain valley at sunrise, layered ridgelines fading from deep blue in the foreground to pale lavender at the horizon. A river of low cloud fills the valley floor, lit orange where the first sunlight strikes it. Snow caps the highest peaks."},
- {id:"04_food",name:"Ramen",k1:2,k2:1,p:"An overhead shot of a rustic wooden table with a bowl of steaming ramen: golden broth, a soft-boiled egg halved to show the runny yolk, sliced pork, spring onion and a sheet of nori. Chopsticks rest on a folded linen napkin beside it. Soft diffused daylight from a window."},
- {id:"05_interior",name:"Library",k1:0,k2:3,p:"The interior of a modern library atrium, four floors of pale oak shelving curving around an open void, a glass ceiling above flooding the space with daylight. A few readers sit at long tables on the ground floor. Strong clean perspective lines converge toward the far wall."},
+ {id:"c06_cabin",name:"Cabin in the snow",k1:1,k2:2,p:"A cozy wooden cabin in a snowy pine forest at night, warm light glowing from the windows, smoke rising from the chimney, a sky full of stars."},
  {id:"06_vehicle",name:"Convertible",k1:1,k2:2,p:"A vintage teal convertible parked on a coastal road at dusk, its chrome bumper and polished paintwork reflecting the last pink light of the sky. The ocean stretches out behind a low stone wall. Headlights are on, casting a warm pool on the asphalt."},
  {id:"07_stilllife",name:"Glass bottles",k1:1,k2:3,p:"A still life of three glass bottles of different heights on a dark slate surface, backlit so the light refracts through the green, amber and clear glass. A scattering of coffee beans lies in front of them. Deep shadows, single hard light source from behind."},
  {id:"08_fantasy",name:"Whale in the sky",k1:1,k2:1,p:"A giant whale drifting through the sky above a quiet seaside town, barnacles on its underside, seabirds circling around it. Villagers in the cobbled square below look up. The light is soft and overcast, and the whale casts a vast shadow across the rooftops."},
  {id:"09_macro",name:"Dragonfly",k1:0,k2:2,p:"An extreme macro photograph of a dew-covered dragonfly resting on a blade of grass in early morning. Every facet of its compound eye is sharp, its wings are translucent with visible veins, and droplets of water bead along its body. The background dissolves into green bokeh."},
- {id:"10_cityscape",name:"Neon street",k1:1,k2:1,p:"A rain-slick street in a dense Asian city at night, dozens of neon signs in pink, cyan and red reflected in the puddles. A lone figure with a transparent umbrella walks away from the camera. Steam rises from a grate. Long exposure, wet asphalt, deep saturated colour."},
- {id:"11_underwater",name:"Coral reef",k1:2,k2:1,p:"An underwater scene of a coral reef in clear turquoise water, shafts of sunlight cutting down from the surface. A school of small yellow fish moves through the frame, and a sea turtle glides past a large brain coral. Fine particles drift in the light beams."},
- {id:"12_action",name:"Skateboarder",k1:1,k2:3,p:"A skateboarder mid-air over a concrete bowl at a skatepark, board tilted, arms out for balance, caught against a bright blue sky with a few thin clouds. The rim of the bowl and the crowd behind are slightly motion-blurred, the rider sharp."},
+ {id:"10_cityscape",name:"Neon street",k1:1,k2:2,p:"A rain-slick street in a dense Asian city at night, dozens of neon signs in pink, cyan and red reflected in the puddles. A lone figure with a transparent umbrella walks away from the camera. Steam rises from a grate. Long exposure, wet asphalt, deep saturated colour."},
+ {id:"c08_balloons",name:"Hot air balloons",k1:0,k2:1,p:"Dozens of colorful hot air balloons floating over green rolling hills at sunrise, soft mist in the valleys."},
  {id:"13_painting",name:"Sunflower painting",k1:3,k2:2,p:"An oil painting in thick impasto of a field of sunflowers under a turbulent evening sky, heavy visible brushstrokes, deep yellows and ultramarine blues, in the manner of post-impressionist landscape painting. Canvas texture is visible."},
  {id:"14_text",name:"Shop sign",k1:0,k2:1,p:"A weathered wooden shop sign hanging above a cobbled street, with the words “THE DAILY GRIND” carved and painted in cream serif letters on a dark green background. A small painted coffee cup sits below the text. Overcast afternoon light."},
  {id:"15_counting",name:"Three mugs",k1:0,k2:1,p:"Three ceramic mugs arranged in a row on a white marble counter: the left one matte black, the middle one glossy red, the right one speckled blue. Behind them stands a small green potted succulent. Even soft studio lighting, clean white background."},
- {id:"16_child_crayons",name:"Child drawing (DPG-Bench)",k1:3,k2:1,p:"A young child with brown hair, focused intently, sits at a wooden table scattered with colorful crayons and paper. In their small hand is a bright red pencil, with which they are diligently drawing a vibrant blue flower that's taking shape on the white sheet before them. Sunlight filters through a nearby window, casting a warm glow on the child's artwork."},
- {id:"17_truck_porsche",name:"Pickup and Porsche (DPG-Bench)",k1:1,k2:1,p:"A vibrant orange pickup truck parked beside a sleek yellow Porsche 911 on a smooth gray asphalt road. The Porsche's polished surface reflects the sunlight, highlighting its aerodynamic shape and the truck's sturdy, boxy frame. Between the two vehicles, the contrasting sizes and designs are evident, with the pickup's raised suspension towering over the low-profile sports car."},
- {id:"18_train_station",name:"Train station (DPG-Bench)",k1:1,k2:0,p:"A traveler stands in a busy train station, clad in a tan jacket that falls to their mid-thigh, paired with a snugly fitted gray scarf around their neck. On their back, a worn brown backpack suggests a journey in progress. They are intently gazing at the cell phone in their hands, perhaps checking a schedule or reading a message. Before them, a sleek silver train rests on the track, its doors poised to open and welcome passengers to the next leg of their travels."},
+ {id:"c09_pancakes",name:"Pancakes",k1:0,k2:1,p:"A stack of fluffy pancakes with blueberries, sliced strawberries and maple syrup on a white plate, morning sunlight on a wooden table."},
+ {id:"c10_puppy",name:"Puppy",k1:2,k2:1,p:"A golden retriever puppy sitting in a field of yellow wildflowers, tongue out, soft afternoon light, shallow depth of field."},
+ {id:"16_child_crayons",name:"Child drawing (DPG-Bench)",k1:3,k2:2,p:"A young child with brown hair, focused intently, sits at a wooden table scattered with colorful crayons and paper. In their small hand is a bright red pencil, with which they are diligently drawing a vibrant blue flower that's taking shape on the white sheet before them. Sunlight filters through a nearby window, casting a warm glow on the child's artwork."},
  {id:"19_orange_flowers",name:"Orange flowers (DPG-Bench)",k1:1,k2:1,p:"a vibrant plant with star-shaped orange flowers blooming amidst lush green leaves. The plant is potted in a terracotta container that sits on a wooden shelf. Around it, other houseplants contribute to a small indoor garden atmosphere."},
- {id:"20_tree_fence",name:"Tree and fence (DPG-Bench)",k1:1,k2:0,p:"a sturdy tree with a thick trunk and sprawling branches that have intertwined with the metal links of a silver chain-link fence. the fence is partially enveloped by the tree's roots and bark, creating a unique blend of natural and man-made elements. the surrounding area is dotted with green grass and a few scattered wildflowers."}
+ {id:"20_tree_fence",name:"Tree and fence (DPG-Bench)",k1:1,k2:1,p:"a sturdy tree with a thick trunk and sprawling branches that have intertwined with the metal links of a silver chain-link fence. the fence is partially enveloped by the tree's roots and bark, creating a unique blend of natural and man-made elements. the surrounding area is dotted with green grass and a few scattered wildflowers."}
 ];
 var BYID={};GEN.forEach(function(g){BYID[g.id]=g;});
-var VS=[["17_truck_porsche","Pickup and Porsche"],["20_tree_fence","Tree and fence"],["09_macro","Dragonfly"],["11_underwater","Coral reef"],["08_fantasy","Whale in the sky"],["04_food","Ramen"]];
-var FACES=[["face_closeup_00","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes, natural window light"],["face_closeup_01","a close-up portrait of a young woman with freckles smiling warmly, shallow depth of field"],["face_closeup_02","a studio headshot of a middle-aged Black man with a short beard, soft key light"],["face_closeup_03","a close-up portrait of an East Asian woman in her thirties, neutral expression, grey background"],["face_closeup_04","a candid close-up of a laughing child with curly hair, outdoor sunlight"],["face_closeup_05","a dramatic side-lit portrait of a South Asian man looking away from the camera"],["face_closeup_06","a close-up of an older woman with silver hair and glasses reading, warm lamplight"],["face_closeup_07","a professional headshot of a blonde woman in a business suit against a white background"],["face_hard_00","a portrait of a man with his hand resting on his chin, fingers visible against his face"],["face_hard_01","two friends standing cheek to cheek smiling at the camera, close-up"],["face_hard_02","a woman with long hair blowing across her face in the wind, backlit"],["face_hard_03","a person wearing round glasses reflecting a window, close-up portrait"],["face_hard_04","a close-up of a face half in shadow, strong chiaroscuro lighting"],["face_hard_05","an elderly couple's faces close together, both smiling, soft focus background"],["face_hard_06","a portrait of a man mid-laugh with teeth visible and eyes crinkled"],["face_hard_07","a baby's face resting on a parent's shoulder, very close up"]];
+var VS=[["c01_freckles_window","Freckles"],["16_child_crayons","Child drawing"],["20_tree_fence","Tree and fence"],["09_macro","Dragonfly"],["08_fantasy","Whale in the sky"],["c08_balloons","Hot air balloons"]];
+var FACES=[
+ ["portrait_01","A close-up portrait of a young woman with curly red hair and green eyes, freckles on her cheeks, soft window light, shallow depth of field."],
+ ["portrait_04","A portrait of a young Black woman with natural curly hair and gold earrings, warm studio light, brown backdrop."],
+ ["face_closeup_00","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes, natural window light"],
+ ["portrait_06","A close-up portrait of a young Japanese woman with short black hair in a white shirt, soft overcast light, minimal background."],
+ ["face_closeup_02","a studio headshot of a middle-aged Black man with a short beard, soft key light"],
+ ["portrait_02","A portrait of an elderly woman with short silver hair smiling warmly, wearing a blue cardigan, a sunlit garden softly blurred behind her."],
+ ["face_hard_07","a baby's face resting on a parent's shoulder, very close up"],
+ ["face_closeup_07","a professional headshot of a blonde woman in a business suit against a white background"],
+ ["face_closeup_04","a candid close-up of a laughing child with curly hair, outdoor sunlight"],
+ ["portrait_07","A portrait of a teenage boy with tousled blond hair smiling at the camera on a beach at sunset, warm backlight."],
+ ["face_hard_01","two friends standing cheek to cheek smiling at the camera, close-up"],
+ ["portrait_08","A dramatic portrait of a middle-aged man with salt-and-pepper hair in a dark coat, rim light, dark background."]
+];
 var EDITS=[
  {f:"edit_e01_replace",t:"Replace",p:"Replace the dragon made of pipe cleaners in the image with a bright yellow rubber duck."},
  {f:"edit_e02_background",t:"Background",p:"Change the cloudy and foggy hilltop background to a bright, sunny beach environment."},
@@ -644,10 +616,8 @@ var EDITS=[
  {f:"edit_e05_text_change",t:"Text",p:"Replace the text '32' with '33'"},
  {f:"edit_e06_add",t:"Add",p:"Add a bicycle near the fence on the left side of the image."},
  {f:"edit_e07_remove",t:"Remove",p:"Remove the helicopter in the foreground."},
- {f:"edit_e08_adjust",t:"Adjust",p:"Change the skin tone to a lighter shade."},
  {f:"edit_e09_extract",t:"Extract",p:"Extract the brown trout fish from the image."},
- {f:"edit_e10_style",t:"Oil painting",p:"Transfer the image into a classic impasto oil-painting style."},
- {f:"edit_e11_compose",t:"Two edits",p:"Remove the laptop from the person's lap, and change the color of the couch to light blue."}
+ {f:"edit_e10_style",t:"Oil painting",p:"Transfer the image into a classic impasto oil-painting style."}
 ];
 
 /* ---------------- theme ---------------- */
@@ -691,6 +661,16 @@ function closeLb(){lb.hidden=true;lbImg.removeAttribute("src");if(lbReturn&&lbRe
 $("lb-x").addEventListener("click",closeLb);
 lb.addEventListener("click",function(e){if(e.target===lb)closeLb();});
 addEventListener("keydown",function(e){if(!lb.hidden&&e.key==="Escape")closeLb();});
+
+/* ---------------- cover ---------------- */
+(function(){
+  var P=["A candid portrait of a smiling grandfather with a white beard and a tweed flat cap, golden hour light, blurred autumn trees behind him.",
+         BYID["02_wildlife"].p,BYID["08_fantasy"].p,BYID["10_cityscape"].p];
+  qa(document,".cover button").forEach(function(b){
+    var k=+b.getAttribute("data-k"),src=b.querySelector("img").getAttribute("src");
+    b.addEventListener("click",function(){openLb(src,"Mobile-O v2. “"+P[k]+"”");});
+  });
+})();
 
 /* ---------------- v1 against v2, best of four ---------------- */
 (function(){
@@ -743,7 +723,7 @@ function slider(el){
 (function(){
   var host=$("gen"),strip=host.querySelector(".strip"),imgs=qa(host,".main-img"),seedHosts=qa(host,".seeds"),ptxt=host.querySelector(".prompt-text");
   var MODELS=[{tag:"v1",pick:"k1",label:"Mobile-O v1"},{tag:"v2",pick:"k2",label:"Mobile-O v2"}];
-  var cur=1,seed=[GEN[1].k1,GEN[1].k2],btns=[];
+  var cur=0,seed=[GEN[0].k1,GEN[0].k2],btns=[];
   GEN.forEach(function(it,i){
     var b=mk("button",{type:"button","aria-pressed":"false","aria-label":it.name,title:it.name});
     b.style.backgroundImage="url(assets/gen/strip.jpg)";
@@ -777,30 +757,15 @@ function slider(el){
   render();
 })();
 
-/* ---------------- faces ---------------- */
+/* ---------------- portraits ---------------- */
 (function(){
-  var host=$("faces-viewer"),strip=host.querySelector(".strip"),four=host.querySelector(".four"),ptxt=host.querySelector(".prompt-text"),cur=9,btns=[];
-  FACES.forEach(function(f,i){
-    var b=mk("button",{type:"button","aria-pressed":"false","aria-label":f[1],title:f[1]});
-    b.style.backgroundImage="url(assets/faces/strip.jpg)";
-    b.style.backgroundSize=(FACES.length*100)+"% 100%";
-    b.style.backgroundPosition=(i/(FACES.length-1)*100)+"% 0";
-    b.addEventListener("click",function(){cur=i;render();});
-    strip.appendChild(b);btns.push(b);
+  var host=$("faces-grid");
+  FACES.forEach(function(f){
+    var src="assets/faces/"+f[0]+".jpg",b=mk("button",{type:"button"});
+    b.appendChild(mk("img",{src:src,alt:"Mobile-O v2 portrait: "+f[1],loading:"lazy",width:"512",height:"512"}));
+    b.addEventListener("click",function(){openLb(src,"Mobile-O v2. “"+f[1]+"”");});
+    host.appendChild(b);
   });
-  function render(){
-    var f=FACES[cur];
-    btns.forEach(function(b,i){b.setAttribute("aria-pressed",i===cur?"true":"false");});
-    four.textContent="";
-    for(var s=0;s<4;s++){(function(s){
-      var src="assets/faces/"+f[0]+"_"+s+".jpg",b=mk("button",{type:"button","aria-label":"Image "+(s+1)+" of 4. Open larger"});
-      b.appendChild(mk("img",{src:src,alt:f[1]+", image "+(s+1)+" of 4",loading:"lazy",width:"512",height:"512"}));
-      b.addEventListener("click",function(){openLb(src,"Image "+(s+1)+" of 4. “"+f[1]+"”");});
-      four.appendChild(b);
-    })(s);}
-    ptxt.textContent="“"+f[1]+"”";
-  }
-  render();
 })();
 
 /* ---------------- editing ---------------- */
@@ -877,65 +842,6 @@ function responsive(chartEl,draw){
   });
 })();
 
-/* ---------------- steps ---------------- */
-(function(){
-  var host=$("steps"),sl=slider(host.querySelector(".cmp")),chartEl=host.querySelector(".chart"),svg=chartEl.querySelector("svg"),t=tipper(chartEl);
-  var PR=[["face_closeup_00_0","Elderly man","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes"],["face_closeup_01_0","Freckles","a close-up portrait of a young woman with freckles smiling warmly"],["body_hands_00_0","Kneading dough","a close-up of two hands kneading dough on a floured wooden table"]];
-  var D=[[6,.103],[8,.132],[12,.100],[16,.102],[20,0],[28,.069],[40,.022]];
-  var p=0,n=12,stepChips;
-  function show(){var id=PR[p][0];sl.show("assets/steps/"+id+"_s20.jpg","20 steps","assets/steps/"+id+"_s"+n+".jpg",n+" steps",PR[p][2]);draw();}
-  chipGroup(host.querySelector('[data-role="prompts"]'),PR.map(function(x,i){return{key:i,label:x[1]};}),0,function(k){p=k;show();});
-  stepChips=chipGroup(host.querySelector('[data-role="steps"]'),D.filter(function(d){return d[0]!==20;}).map(function(d){return{key:d[0],label:d[0]+" steps"};}),12,function(k){n=k;show();});
-  function draw(){
-    var W=Math.max(300,Math.round(chartEl.clientWidth)||620);
-    svg.textContent="";
-    var H=210,L=46,R=10,T=24,B=40,lo=-.02,hi=.16;
-    svg.setAttribute("viewBox","0 0 "+W+" "+H);
-    var xs=function(i){return L+(W-L-R)*(i+.5)/D.length;},ys=function(v){return T+(H-T-B)*(1-(v-lo)/(hi-lo));};
-    [0,.05,.1,.15].forEach(function(v){
-      svg.appendChild(sv("line",{x1:L,x2:W-R,y1:ys(v),y2:ys(v),"class":v===0?"ax":"gl"}));
-      svg.appendChild(sv("text",{x:L-8,y:ys(v)+4,"text-anchor":"end"},v===0?"0":fmt(v,2)));
-    });
-    svg.appendChild(sv("text",{x:L,y:T-10,"class":"t2"},W<480?"Change compared with 20 steps":"Change in HumanBench score compared with 20 steps"));
-    svg.appendChild(sv("text",{x:(L+W-R)/2,y:H-6,"text-anchor":"middle"},"Sampler steps"));
-    D.forEach(function(d,i){
-      var x=xs(i),y=ys(d[1]),sel=d[0]===n,ref=d[0]===20;
-      svg.appendChild(sv("text",{x:x,y:H-B+18,"text-anchor":"middle","class":sel?"t1":""},String(d[0])));
-      var g=sv("g",{"class":"pt",tabindex:ref?"-1":"0",role:"button","aria-label":ref?"20 steps, the reference":d[0]+" steps: "+fmt(d[1],3)});
-      if(!ref)g.appendChild(sv("line",{x1:x,x2:x,y1:ys(0),y2:y,style:"stroke:var(--s1);stroke-width:2;opacity:"+(sel?1:.45)}));
-      if(sel)g.appendChild(sv("circle",{cx:x,cy:y,r:11,style:"fill:none;stroke:var(--s1);stroke-width:1.5;opacity:.45"}));
-      g.appendChild(sv("circle",{"class":"ring",cx:x,cy:y,r:ref?4.5:6,style:ref?"fill:var(--bg);stroke:var(--n3);stroke-width:2":"fill:var(--s1);stroke:var(--bg);stroke-width:2"}));
-      g.appendChild(sv("rect",{x:x-18,y:T,width:36,height:H-T-B,style:"fill:transparent"}));
-      if(sel&&!ref)g.appendChild(sv("text",{x:x,y:y-14,"text-anchor":"middle","class":"t1"},fmt(d[1],2)));
-      if(ref)g.appendChild(sv("text",{x:x,y:y-12,"text-anchor":"middle"},W<480?"ref.":"reference"));
-      if(!ref){
-        bindTip(g,t,[{b:d[0]+" steps"},fmt(d[1],3)+" compared with 20 steps"]);
-        var pick=function(){n=d[0];stepChips.set(n);show();};
-        g.addEventListener("click",pick);g.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();pick();}});
-      }
-      svg.appendChild(g);
-    });
-  }
-  var lastW=0,tm=null;addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(function(){var w=Math.round(chartEl.clientWidth);if(w!==lastW){lastW=w;draw();}},120);});
-  show();
-})();
-
-/* ---------------- guidance ---------------- */
-(function(){
-  var host=$("cfg"),sl=slider(host.querySelector(".cmp")),readout=host.querySelector('[data-role="readout"]');
-  var PR=[["face_closeup_01_0","Freckles","a close-up portrait of a young woman with freckles smiling warmly"],["face_hard_06_0","Laughing man","a portrait of a man mid-laugh with teeth visible and eyes crinkled"],["face_closeup_00_0","Elderly man","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes"]];
-  var G={g20:["2.0",-0.007],g30:["3.0",-0.158]};
-  var p=0,g="g30";
-  function show(){
-    var id=PR[p][0];
-    sl.show("assets/cfg/"+id+"_g15.jpg","Guidance 1.5","assets/cfg/"+id+"_"+g+".jpg","Guidance "+G[g][0],PR[p][2]);
-    readout.textContent="HumanBench realism score at guidance "+G[g][0]+", compared with 1.5: "+fmt(G[g][1],2)+" on a 1-to-5 scale";
-  }
-  chipGroup(host.querySelector('[data-role="prompts"]'),PR.map(function(x,i){return{key:i,label:x[1]};}),0,function(k){p=k;show();});
-  chipGroup(host.querySelector('[data-role="scale"]'),[{key:"g20",label:"Guidance 2.0"},{key:"g30",label:"Guidance 3.0"}],g,function(k){g=k;show();});
-  show();
-})();
-
 /* ---------------- time per image ---------------- */
 (function(){
   var chartEl=$("chart-lat"),t=tipper(chartEl);
@@ -969,14 +875,14 @@ function responsive(chartEl,draw){
 (function(){
   var svg=$("arch"),det=$("arch-detail");
   var INFO={
-    prompt:["Text prompt","The prompt, or the instruction when editing. MiniCPM reads it with its usual chat template.",["e1"]],
-    image:["Source image","Only used for editing. MiniCPM's vision encoder reads it, so the model knows what is in the picture before it changes it.",["e2"]],
-    vlm:["MiniCPM-V-4.6, frozen, 1.30B","A vision encoder and a Qwen3.5 language model. Its last hidden layer describes what to draw. Because we never train it, it keeps its full image understanding.",["e1","e2","e3"]],
-    conn:["Connector, trained, 8.8M","Turns the VLM's output into the input the diffusion model expects.",["e3","e4"]],
-    noise:["Random noise","Every image starts as random noise with the same shape as the latent, 32 channels at 16×16.",["e5"]],
-    dit:["SANA-600M, trained, 591.7M","28 transformer blocks that remove the noise step by step while looking at the connector's output. It works on a 16×16 latent, which is 256 tokens. We sample with 12 steps and guidance 1.5.",["e4","e5","e6"]],
-    dec:["DC-AE decoder, frozen, 159M","Turns the 16×16 latent into a 512×512 image in 29 ms.",["e6","e7","e8"]],
-    head:["1024px head, optional, 106.5M","Reads the decoder's last internal features and outputs a 1024×1024 image. It adds 58 ms.",["e8","e9"]],
+    prompt:["Text prompt","The prompt, or the instruction when editing. The VLM reads it with its usual chat template.",["e1"]],
+    image:["Source image","Only used for editing. The VLM's vision encoder reads it, so the model knows what is in the picture before it changes it.",["e2"]],
+    vlm:["Efficient VLM, frozen","A vision encoder and a language model. Its last hidden layer describes what to draw. Because we never train it, it keeps its full image understanding.",["e1","e2","e3"]],
+    conn:["Connector, trained","Turns the VLM's output into the input the DiT expects.",["e3","e4"]],
+    noise:["Random noise","Every image starts as random noise with the same shape as the 16×16 latent.",["e5"]],
+    dit:["Efficient DiT, trained","A diffusion transformer that removes the noise step by step while looking at the connector's output. It works on a 16×16 latent, which is 256 tokens.",["e4","e5","e6"]],
+    dec:["Decoder, frozen","Turns the 16×16 latent into a 512×512 image in 29 ms.",["e6","e7","e8"]],
+    head:["1024px head, optional","Reads the decoder's last internal features and outputs a 1024×1024 image. It adds 58 ms.",["e8","e9"]],
     o512:["512×512 image","817 ms from prompt to image with 20 steps.",["e7"]],
     o1024:["1024×1024 image","874 ms from prompt to image with 20 steps.",["e9"]]
   };
