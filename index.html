@@ -443,8 +443,8 @@ footer a{color:var(--fg-2)}
 <p>We ran v1 and v2 through the same evaluation code, both with 20 sampler steps and guidance 1.5. v2 is ahead on every benchmark we ran, and its biggest GenEval gains are in the three categories where v1 was weakest: counting, putting objects in the right position, and giving each object the right color.</p>
 
 <figure id="fig-geneval">
-  <div class="chart" id="chart-geneval"><svg class="ch" viewBox="0 0 660 262" role="img" aria-label="GenEval by category: v2 improves on v1 in every category, most in counting, position and color attribution"></svg><div class="tip" hidden></div></div>
-  <div class="legend"><span><i class="dot" style="background:var(--n1)"></i>Mobile-O v1</span><span><i class="dot" style="background:var(--s1)"></i>Mobile-O v2</span></div>
+  <div class="chart" id="chart-geneval"><svg class="ch" viewBox="0 0 660 270" role="img" aria-label="GenEval by category as grouped bars: v2 scores higher than v1 in every category, most in counting, position and color attribution"></svg><div class="tip" hidden></div></div>
+  <div class="legend"><span><i style="background:var(--n1)"></i>Mobile-O v1</span><span><i style="background:var(--s1)"></i>Mobile-O v2</span></div>
   <figcaption>GenEval scores by category, as the share of images the benchmark marks correct. "Color attribution" checks that each object gets the color the prompt gave it, for example a red cup next to a blue book.</figcaption>
 </figure>
 
@@ -848,29 +848,32 @@ function responsive(chartEl,draw){
   function go(){var w=Math.round(chartEl.clientWidth);if(w&&w!==last){last=w;draw(svg,w);}}
   go();var tm=null;addEventListener("resize",function(){clearTimeout(tm);tm=setTimeout(go,120);});
 }
-/* ---------------- GenEval by category (v1 to v2) ---------------- */
+/* ---------------- GenEval by category: grouped bars, v1 and v2 ---------------- */
 (function(){
   var chartEl=$("chart-geneval"),t=tipper(chartEl);
   var C=[["Single object",98.12,99.06],["Two objects",89.65,96.97],["Counting",68.75,88.75],["Colors",85.64,90.96],["Position",74.5,93.5],["Color attribution",58.75,77.75]];
+  var S=[{i:1,name:"Mobile-O v1",fill:"var(--n1)",lab:""},{i:2,name:"Mobile-O v2",fill:"var(--s1)",lab:"t1"}];
+  function col(x,y,w,h,r){r=Math.min(r,h,w/2);return "M"+x+","+(y+h)+" V"+(y+r)+" A"+r+","+r+" 0 0 1 "+(x+r)+","+y+" H"+(x+w-r)+" A"+r+","+r+" 0 0 1 "+(x+w)+","+(y+r)+" V"+(y+h)+" Z";}
   responsive(chartEl,function(svg,W){
     svg.textContent="";
-    var H=250,L=Math.min(132,Math.round(W*.33)),R=36,T=6,B=30,lo=50,hi=100,rowH=(H-T-B)/C.length;
+    var H=270,L=38,R=6,T=22,B=48,base=H-B,ph=base-T;
     svg.setAttribute("viewBox","0 0 "+W+" "+H);
-    var xs=function(v){return L+(W-L-R)*(v-lo)/(hi-lo);};
-    [50,60,70,80,90,100].forEach(function(v){
-      svg.appendChild(sv("line",{x1:xs(v),x2:xs(v),y1:T,y2:H-B,"class":"gl"}));
-      if(W>=420||v%20===10||v===100)svg.appendChild(sv("text",{x:xs(v),y:H-B+16,"text-anchor":"middle"},v+"%"));
+    var ys=function(v){return base-ph*v/100;},gw=(W-L-R)/C.length,bw=Math.max(10,Math.min(24,gw*.3)),gap=2;
+    [0,25,50,75,100].forEach(function(v){
+      svg.appendChild(sv("line",{x1:L,x2:W-R,y1:ys(v),y2:ys(v),"class":v?"gl":"ax"}));
+      svg.appendChild(sv("text",{x:L-8,y:ys(v)+4,"text-anchor":"end"},v+"%"));
     });
-    C.forEach(function(c,i){
-      var y=T+rowH*(i+.5);
-      svg.appendChild(sv("text",{x:L-12,y:y+4,"text-anchor":"end","class":"t2"},c[0]));
-      var g=sv("g",{"class":"pt",tabindex:"0","aria-label":c[0]+": v1 "+c[1].toFixed(1)+" percent, v2 "+c[2].toFixed(1)+" percent"});
-      g.appendChild(sv("rect",{x:L,y:y-rowH/2,width:W-L-R,height:rowH,style:"fill:transparent"}));
-      g.appendChild(sv("line",{x1:xs(c[1]),x2:xs(c[2]),y1:y,y2:y,style:"stroke:var(--n1);stroke-width:2"}));
-      g.appendChild(sv("circle",{"class":"ring",cx:xs(c[1]),cy:y,r:5.5,style:"fill:var(--n1);stroke:var(--bg);stroke-width:2"}));
-      g.appendChild(sv("circle",{"class":"ring",cx:xs(c[2]),cy:y,r:6,style:"fill:var(--s1);stroke:var(--bg);stroke-width:2"}));
-      g.appendChild(sv("text",{x:xs(c[1])-10,y:y+4,"text-anchor":"end"},c[1].toFixed(0)));
-      g.appendChild(sv("text",{x:xs(c[2])+10,y:y+4,"class":"t1"},c[2].toFixed(0)));
+    C.forEach(function(c,k){
+      var cx=L+gw*(k+.5),x0=cx-bw-gap/2;
+      var g=sv("g",{"class":"pt",tabindex:"0","aria-label":c[0]+": Mobile-O v1 "+c[1].toFixed(1)+" percent, Mobile-O v2 "+c[2].toFixed(1)+" percent"});
+      g.appendChild(sv("rect",{x:cx-gw/2,y:T-18,width:gw,height:base-T+18,style:"fill:transparent"}));
+      S.forEach(function(s,m){
+        var v=c[s.i],x=x0+m*(bw+gap),y=ys(v);
+        g.appendChild(sv("path",{d:col(x,y,bw,base-y,4),style:"fill:"+s.fill}));
+        g.appendChild(sv("text",{x:x+bw/2,y:y-6,"text-anchor":"middle","class":s.lab},String(Math.round(v))));
+      });
+      var words=c[0].split(" ");
+      words.forEach(function(wd,li){svg.appendChild(sv("text",{x:cx,y:base+17+li*14,"text-anchor":"middle","class":"t2"},wd));});
       bindTip(g,t,[{b:c[0]},"Mobile-O v1: "+c[1].toFixed(1)+"%","Mobile-O v2: "+c[2].toFixed(1)+"%"]);
       svg.appendChild(g);
     });
