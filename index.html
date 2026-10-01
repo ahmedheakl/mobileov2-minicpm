@@ -430,7 +430,7 @@ footer a{color:var(--fg-2)}
   <figcaption>The Mobile-O v2 pipeline. Blocks filled in gray are frozen, and blocks outlined in blue are trained.</figcaption>
 </figure>
 
-<p><b>MiniCPM-V-4.6 reads the input.</b> It reads the prompt, and when editing it also looks at the source image. We use its last hidden layer as the description of what to draw. It stays frozen, so it keeps all of its ability to understand images.</p>
+<p><b>MiniCPM-V-4.6 reads the input.</b> It reads the prompt, and when editing it also looks at the source image. We use its last hidden layer as the description of what to draw. It stays frozen, so it keeps all of its ability for image understanding.</p>
 <p><b>The connector translates.</b> A small network with 8.8M parameters turns that description into the form the diffusion model expects.</p>
 <p><b>The diffusion transformer draws.</b> SANA-600M starts from random noise and removes it step by step until a small 16×16 latent image is left. We fine-tune all of it.</p>
 <p><b>The decoder makes the pixels.</b> The frozen DC-AE decoder turns the 16×16 latent into a 512×512 image.</p>
