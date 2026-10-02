@@ -266,10 +266,10 @@ footer a{color:var(--fg-2)}
 
 <div class="cover">
   <div class="row">
-    <button type="button" data-k="0"><img src="assets/cover/portrait_05.jpg" width="512" height="512" alt="A smiling grandfather with a white beard and a tweed flat cap in golden autumn light"></button>
-    <button type="button" data-k="1"><img src="assets/gen/02_wildlife_v2_0.jpg" width="512" height="512" alt="A red fox standing in a snowy meadow at dawn"></button>
-    <button type="button" data-k="2"><img src="assets/gen/08_fantasy_v2_1.jpg" width="512" height="512" alt="A whale drifting through the sky above a seaside town while villagers look up"></button>
-    <button type="button" data-k="3"><img src="assets/gen/10_cityscape_v2_2.jpg" width="512" height="512" alt="A figure with an umbrella walking down a rainy neon-lit street at night"></button>
+    <button type="button" data-k="0"><img src="assets/cover/portrait.jpg" width="512" height="512" alt="A young woman with long brown hair and hazel eyes in soft window light"></button>
+    <button type="button" data-k="1"><img src="assets/cover/fox.jpg" width="512" height="512" alt="A red fox sitting in tall golden grass at sunrise"></button>
+    <button type="button" data-k="2"><img src="assets/cover/lake.jpg" width="512" height="512" alt="A turquoise alpine lake between pine forest and snow-capped mountains"></button>
+    <button type="button" data-k="3"><img src="assets/cover/croissant.jpg" width="512" height="512" alt="A croissant and a cappuccino on a marble cafe table"></button>
   </div>
   <p>Four images made by Mobile-O v2 from text prompts. Click one to see it larger with its prompt.</p>
 </div>
@@ -321,7 +321,7 @@ footer a{color:var(--fg-2)}
 
 <figure id="fig-vs">
   <div id="vs"></div>
-  <figcaption>Mobile-O v1 (top) and v2 (bottom) on six of our test prompts, the best of four images from each model. Click an image to see it larger with its full prompt. v2 includes details from the prompts that v1 leaves out or barely shows, such as the woman's freckles, the dew on the dragonfly, the seabirds around the whale and the morning mist between the hills. Figure 6 has every image from both models for these six prompts and twelve more.</figcaption>
+  <figcaption>Mobile-O v1 (top) and v2 (bottom) on six of our test prompts, the best of four images from each model. Click an image to see it larger with its full prompt. v2's images look more like real photographs, with natural skin, feathers and fur, and they include details from the prompts that v1 leaves out or barely shows, such as the woman's freckles, the dew on the dragonfly and the water droplets on the strawberries. Figure 6 has every image from both models for these six prompts and 14 more.</figcaption>
 </figure>
 
 <h2 id="new">What's new in v2</h2>
@@ -461,7 +461,7 @@ footer a{color:var(--fg-2)}
 
 <h2 id="examples">Examples</h2>
 <h3>Generating images</h3>
-<p>Figure 6 has 18 of our test prompts and every image both models made for them, four per prompt from each model. The last three prompts are long ones from DPG-Bench.</p>
+<p>Figure 6 has 20 of our test prompts and every image both models made for them, four per prompt from each model. The last two prompts are long ones from DPG-Bench.</p>
 
 <figure id="fig-gen">
   <div class="panel" id="gen">
@@ -575,8 +575,10 @@ function sv(tag,attrs,text){var e=document.createElementNS(NS,tag);for(var k in 
 var GEN=[
  {id:"02_wildlife",name:"Fox in the snow",k1:1,k2:0,p:"A red fox standing alert in a snow-covered meadow at dawn, its orange fur vivid against the white ground, breath visible in the cold air. Bare birch trunks recede into soft mist behind it. Shot on a telephoto lens with a shallow depth of field."},
  {id:"c01_freckles_window",name:"Freckles by a window",k1:2,k2:0,p:"A smiling young woman with freckles and auburn hair in a cream knit sweater, sitting by a window in soft morning light, shallow depth of field."},
+ {id:"c02_fisherman",name:"Fisherman",k1:0,k2:3,p:"An elderly fisherman with a white beard and a navy wool hat looking at the camera, an overcast harbor with fishing boats behind him."},
  {id:"03_landscape",name:"Mountain valley",k1:2,k2:3,p:"A vast mountain valley at sunrise, layered ridgelines fading from deep blue in the foreground to pale lavender at the horizon. A river of low cloud fills the valley floor, lit orange where the first sunlight strikes it. Snow caps the highest peaks."},
  {id:"c06_cabin",name:"Cabin in the snow",k1:1,k2:2,p:"A cozy wooden cabin in a snowy pine forest at night, warm light glowing from the windows, smoke rising from the chimney, a sky full of stars."},
+ {id:"rs05_owl",name:"Snowy owl",k1:0,k2:2,p:"A wildlife photograph of a snowy owl perched on a wooden fence post in a winter field, sharp feather detail, soft overcast light."},
  {id:"06_vehicle",name:"Convertible",k1:1,k2:2,p:"A vintage teal convertible parked on a coastal road at dusk, its chrome bumper and polished paintwork reflecting the last pink light of the sky. The ocean stretches out behind a low stone wall. Headlights are on, casting a warm pool on the asphalt."},
  {id:"07_stilllife",name:"Glass bottles",k1:1,k2:3,p:"A still life of three glass bottles of different heights on a dark slate surface, backlit so the light refracts through the green, amber and clear glass. A scattering of coffee beans lies in front of them. Deep shadows, single hard light source from behind."},
  {id:"08_fantasy",name:"Whale in the sky",k1:1,k2:1,p:"A giant whale drifting through the sky above a quiet seaside town, barnacles on its underside, seabirds circling around it. Villagers in the cobbled square below look up. The light is soft and overcast, and the whale casts a vast shadow across the rooftops."},
@@ -587,24 +589,24 @@ var GEN=[
  {id:"14_text",name:"Shop sign",k1:0,k2:1,p:"A weathered wooden shop sign hanging above a cobbled street, with the words “THE DAILY GRIND” carved and painted in cream serif letters on a dark green background. A small painted coffee cup sits below the text. Overcast afternoon light."},
  {id:"15_counting",name:"Three mugs",k1:0,k2:1,p:"Three ceramic mugs arranged in a row on a white marble counter: the left one matte black, the middle one glossy red, the right one speckled blue. Behind them stands a small green potted succulent. Even soft studio lighting, clean white background."},
  {id:"c09_pancakes",name:"Pancakes",k1:0,k2:1,p:"A stack of fluffy pancakes with blueberries, sliced strawberries and maple syrup on a white plate, morning sunlight on a wooden table."},
+ {id:"rs07_strawberries",name:"Strawberries",k1:0,k2:0,p:"A food photograph of a bowl of fresh strawberries on a rustic wooden table, morning window light, water droplets on the fruit, shallow depth of field."},
  {id:"c10_puppy",name:"Puppy",k1:2,k2:1,p:"A golden retriever puppy sitting in a field of yellow wildflowers, tongue out, soft afternoon light, shallow depth of field."},
- {id:"16_child_crayons",name:"Child drawing (DPG-Bench)",k1:3,k2:2,p:"A young child with brown hair, focused intently, sits at a wooden table scattered with colorful crayons and paper. In their small hand is a bright red pencil, with which they are diligently drawing a vibrant blue flower that's taking shape on the white sheet before them. Sunlight filters through a nearby window, casting a warm glow on the child's artwork."},
  {id:"19_orange_flowers",name:"Orange flowers (DPG-Bench)",k1:1,k2:1,p:"a vibrant plant with star-shaped orange flowers blooming amidst lush green leaves. The plant is potted in a terracotta container that sits on a wooden shelf. Around it, other houseplants contribute to a small indoor garden atmosphere."},
  {id:"20_tree_fence",name:"Tree and fence (DPG-Bench)",k1:1,k2:1,p:"a sturdy tree with a thick trunk and sprawling branches that have intertwined with the metal links of a silver chain-link fence. the fence is partially enveloped by the tree's roots and bark, creating a unique blend of natural and man-made elements. the surrounding area is dotted with green grass and a few scattered wildflowers."}
 ];
 var BYID={};GEN.forEach(function(g){BYID[g.id]=g;});
-var VS=[["c01_freckles_window","Freckles"],["16_child_crayons","Child drawing"],["20_tree_fence","Tree and fence"],["09_macro","Dragonfly"],["08_fantasy","Whale in the sky"],["c08_balloons","Hot air balloons"]];
+var VS=[["c01_freckles_window","Freckles"],["c02_fisherman","Fisherman"],["rs05_owl","Snowy owl"],["09_macro","Dragonfly"],["c10_puppy","Puppy"],["rs07_strawberries","Strawberries"]];
 var FACES=[
  ["portrait_01","A close-up portrait of a young woman with curly red hair and green eyes, freckles on her cheeks, soft window light, shallow depth of field."],
  ["portrait_04","A portrait of a young Black woman with natural curly hair and gold earrings, warm studio light, brown backdrop."],
  ["face_closeup_00","a close-up portrait photograph of an elderly man with deep wrinkles and kind eyes, natural window light"],
  ["portrait_06","A close-up portrait of a young Japanese woman with short black hair in a white shirt, soft overcast light, minimal background."],
  ["face_closeup_02","a studio headshot of a middle-aged Black man with a short beard, soft key light"],
- ["portrait_02","A portrait of an elderly woman with short silver hair smiling warmly, wearing a blue cardigan, a sunlit garden softly blurred behind her."],
+ ["rp05_old_woman_scarf","A candid street photograph of a smiling elderly woman with silver hair wearing a red wool scarf, autumn afternoon in a park, natural colors, 35mm film, realistic skin texture."],
  ["face_hard_07","a baby's face resting on a parent's shoulder, very close up"],
  ["face_closeup_07","a professional headshot of a blonde woman in a business suit against a white background"],
- ["face_closeup_04","a candid close-up of a laughing child with curly hair, outdoor sunlight"],
- ["portrait_07","A portrait of a teenage boy with tousled blond hair smiling at the camera on a beach at sunset, warm backlight."],
+ ["rp02_street_man","A natural-light portrait photograph of a young man with short dark hair and light stubble looking at the camera, overcast daylight on a city street, shallow depth of field, 85mm lens, realistic skin texture."],
+ ["rp01_cafe_woman","A candid 35mm film photograph of a young woman with dark curly hair smiling softly, sitting by a cafe window in natural afternoon light, realistic skin texture, muted natural colors, shot on Kodak Portra 400."],
  ["face_hard_01","two friends standing cheek to cheek smiling at the camera, close-up"],
  ["portrait_08","A dramatic portrait of a middle-aged man with salt-and-pepper hair in a dark coat, rim light, dark background."]
 ];
@@ -664,8 +666,10 @@ addEventListener("keydown",function(e){if(!lb.hidden&&e.key==="Escape")closeLb()
 
 /* ---------------- cover ---------------- */
 (function(){
-  var P=["A candid portrait of a smiling grandfather with a white beard and a tweed flat cap, golden hour light, blurred autumn trees behind him.",
-         BYID["02_wildlife"].p,BYID["08_fantasy"].p,BYID["10_cityscape"].p];
+  var P=["A close-up portrait photograph of a young woman with long brown hair and hazel eyes, soft window light, plain neutral background, natural makeup, sharp focus on the eyes, 85mm lens, subtle film grain.",
+         "A wildlife photograph of a red fox sitting in tall golden grass at sunrise, sharp focus on its eyes, telephoto lens, natural colors.",
+         "A landscape photograph of a turquoise alpine lake surrounded by pine forest and snow-capped mountains on a clear morning, crisp detail, natural colors.",
+         "A food photograph of a fresh croissant and a cappuccino on a marble cafe table, soft morning window light, shallow depth of field, natural colors."];
   qa(document,".cover button").forEach(function(b){
     var k=+b.getAttribute("data-k"),src=b.querySelector("img").getAttribute("src");
     b.addEventListener("click",function(){openLb(src,"Mobile-O v2. “"+P[k]+"”");});
