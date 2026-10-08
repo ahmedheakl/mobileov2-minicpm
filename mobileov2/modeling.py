@@ -33,6 +33,7 @@ except ImportError:  # not re-exported in some builds
 from huggingface_hub.dataclasses import strict
 
 from .blocks import McptfConditioningProjector
+from .source_gate import has_gate, install
 
 SANA_REPO = "Efficient-Large-Model/Sana_600M_512px_diffusers"
 VLM_REPO = "openbmb/MiniCPM-V-4_6"
@@ -151,6 +152,16 @@ def load_model(ckpt, device, base=VLM_REPO, sana=SANA_REPO, vlm_layers=1):
     tgt = {k: v for k, v in sd.items() if ".dit." in k or "diffusion_connector" in k}
     assert tgt, f"no dit/connector weights in {ckpt}"
     assert len(tgt) == len(sd), f"{len(sd) - len(tgt)} tensors in {ckpt} are neither dit nor connector"
+    # A dual-stream checkpoint also carries the source gate; it must exist before the load so its two
+    # tensors land instead of being reported as unexpected. Single-stream checkpoints are unaffected.
+    dual = has_gate(tgt)
+    if dual:
+        install(model.get_model().dit)
     _, unexpected = model.load_state_dict(tgt, strict=False)
     assert not unexpected, f"{len(unexpected)} tensors did not land: {unexpected[:5]}"
+    if dual:
+        g = float(torch.tanh(model.get_model().dit.source_gate.gate.detach()).item())
+        assert g != 0.0, "dual-stream checkpoint with a gate of exactly 0: the source channel would do nothing"
+        print(f"[mobileov2] dual-stream checkpoint: edits feed the source latent through the gate "
+              f"(tanh(gate) {g:+.4f})", flush=True)
     return model.to(device, torch.bfloat16).eval()

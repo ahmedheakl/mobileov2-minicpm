@@ -5,7 +5,8 @@
     python infer.py --prompt "a cat" "a dog" --out out/          # --out becomes a directory
 
 The checkpoint is downloaded from the Hugging Face Hub on first use. Defaults are the
-shipping recipe and two of them are easy to "fix" into something worse -- see README.
+measured shipping recipe of the default checkpoint (see README): text-to-image with APG at
+cfg 3.0, editing with plain cfg 2.0, 20 DPM-Solver++ steps.
 """
 import argparse
 import os
@@ -18,6 +19,7 @@ from transformers import AutoProcessor
 from mobileov2 import encode, encode_edit, load_model, make_noise, n_fuse, sample
 from mobileov2.hires import load_head
 from mobileov2.modeling import SANA_REPO, VLM_REPO
+from mobileov2.source_gate import encode_sources
 
 
 def main():
@@ -25,12 +27,15 @@ def main():
     ap.add_argument("--prompt", nargs="+", required=True, help="prompt, or edit instruction with --image")
     ap.add_argument("--image", nargs="*", default=[], help="source image(s) -> edit mode; one image is reused for every prompt")
     ap.add_argument("--out", default="out/sample.png", help="a file for one prompt, else a directory")
-    ap.add_argument("--ckpt", default="ahmedheakl/rand-mobile", help="HF repo id or local dir")
+    ap.add_argument("--ckpt", default="ahmedheakl/rand-dual", help="HF repo id or local dir")
     ap.add_argument("--base", default=VLM_REPO)
     ap.add_argument("--sana", default=SANA_REPO)
     ap.add_argument("--vlm_layers", type=int, default=1)
-    ap.add_argument("--steps", type=int, default=12, help="12 is the measured optimum, not 20")
-    ap.add_argument("--cfg", type=float, default=1.5, help="3.0 trades human quality for alignment scores")
+    ap.add_argument("--steps", type=int, default=20)
+    ap.add_argument("--cfg", type=float, default=None,
+                    help="default: 3.0 for text-to-image (with APG), 2.0 for editing")
+    ap.add_argument("--guidance", choices=["auto", "apg", "cfg"], default="auto",
+                    help="auto = APG for text-to-image, plain CFG for editing")
     ap.add_argument("--size", type=int, default=512, choices=[512, 1024],
                     help="1024 decodes through the trained hi-res head; the diffusion is unchanged")
     ap.add_argument("--seed", type=int, default=0)
@@ -38,6 +43,10 @@ def main():
     args = ap.parse_args()
 
     edit = bool(args.image)
+    if args.cfg is None:
+        args.cfg = 2.0 if edit else 3.0
+    if args.guidance == "auto":
+        args.guidance = "cfg" if edit else "apg"
     srcs = args.image * len(args.prompt) if len(args.image) == 1 else args.image
     assert not edit or len(srcs) == len(args.prompt), \
         f"{len(args.image)} images for {len(args.prompt)} prompts: pass one image, or one per prompt"
@@ -49,7 +58,7 @@ def main():
     device = torch.device("cuda", args.gpu) if torch.cuda.is_available() else torch.device("cpu")
     torch.set_grad_enabled(False)
     print(f"[infer] {'edit' if edit else 'gen'} | {len(args.prompt)} prompt(s) | {args.size}px | "
-          f"DPM-Solver++ order 2 steps={args.steps} cfg={args.cfg} | {args.ckpt}", flush=True)
+          f"DPM-Solver++ order 2 steps={args.steps} cfg={args.cfg} ({args.guidance}) | {args.ckpt}", flush=True)
 
     t0 = time.time()
     model = load_model(args.ckpt, device, base=args.base, sana=args.sana, vlm_layers=args.vlm_layers)
@@ -65,10 +74,15 @@ def main():
         rows = [{"image": Image.open(p).convert("RGB"), "instruction": q}
                 for p, q in zip(srcs, args.prompt)]
         cond = encode_edit(model, proc, rows, device)
+        # dual-stream checkpoints also take the source image's latent (None on single-stream ones)
+        src = (encode_sources(inner.vae, [r["image"] for r in rows])
+               if getattr(inner.dit, "source_gate", None) is not None else None)
     else:
         cond = encode(model, proc.tokenizer, args.prompt, device)
+        src = None
     noise = make_noise(len(args.prompt), (C, S), args.seed, device)
-    imgs = sample(model, *cond, noise, args.steps, args.cfg, size=args.size, head=head)
+    imgs = sample(model, *cond, noise, args.steps, args.cfg, size=args.size, head=head,
+                  src=src, guidance=args.guidance)
     dt = time.time() - t0
 
     assert len(imgs) == len(paths), f"{len(imgs)} images for {len(paths)} outputs"

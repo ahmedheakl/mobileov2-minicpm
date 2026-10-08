@@ -4,8 +4,14 @@ Minimal inference code for **Mobile-O v2** — a 0.5B text-to-image and image-ed
 from a frozen MiniCPM-V-4.6 VLM, a small conditioning connector, and a SANA-600M diffusion head
 at 512×512.
 
+The default checkpoint, [`ahmedheakl/rand-dual`](https://huggingface.co/ahmedheakl/rand-dual), is
+**dual-stream**: when editing, the DiT also receives the source image's own latent through a learned
+gate, so it can copy what the instruction does not touch instead of redrawing it from the VLM's
+description (see *Dual-stream editing* below). Text-to-image is unchanged by it.
+
 This repo is inference only. It is the smallest amount of code that reproduces the released
-checkpoints exactly; the training, RL and evaluation code is not here.
+checkpoints (see *Equivalence with the research code*); the training, RL and evaluation code is not
+here.
 
 ```bash
 pip install -r requirements.txt
@@ -21,24 +27,29 @@ Hub and caches them (~6 GB total):
 
 | what | repo | size |
 |---|---|---|
-| the trained head (DiT + connector) | [`ahmedheakl/rand-mobile`](https://huggingface.co/ahmedheakl/rand-mobile) | 1.2 GB |
+| the trained head (DiT + connector + source gate) | [`ahmedheakl/rand-dual`](https://huggingface.co/ahmedheakl/rand-dual) | 1.2 GB |
 | the frozen VLM encoder | `openbmb/MiniCPM-V-4_6` | 2.5 GB |
 | the DiT skeleton + DC-AE decoder | `Efficient-Large-Model/Sana_600M_512px_diffusers` | 2.3 GB |
 
-The checkpoint on the Hub is the **head only** — 548 DiT tensors + 54 connector tensors. The VLM is
-frozen during training, so it is not duplicated there; that is why the other two repos are needed.
+The checkpoint on the Hub is the **head only** — 548 DiT tensors + 54 connector tensors, plus the 2
+source-gate tensors on a dual-stream checkpoint. The VLM is frozen during training, so it is not
+duplicated there; that is why the other two repos are needed.
 
 **`transformers>=5` is required.** MiniCPM-V-4.6 is a native transformers model, and on 4.x the
 import fails with `No module named transformers.models.minicpmv4_6`.
 
 ## Checkpoints
 
-| `--ckpt` | what it is | GenEval | DPG | ImageReward | GEdit |
-|---|---|---|---|---|---|
-| `ahmedheakl/rand-mobile` (default) | `soup3-targets`, the best checkpoint | 0.902 | 82.2 | 0.957 | 6.74 |
-| `ahmedheakl/rand-mobile-grpo` | the GRPO baseline it was built from | 0.912 | 80.7 | 0.763 | 6.52 |
+| `--ckpt` | what it is | GenEval | DPG | FID | ImageReward | ImgEdit | GEdit |
+|---|---|---|---|---|---|---|---|
+| `ahmedheakl/rand-dual` (default) | dual-stream; average of five RL runs + ReFL; the best checkpoint | 0.897 | 84.1 | 13.2 | 1.083 | 3.28 | 6.80 |
+| `ahmedheakl/rand-mobile` | single-stream `soup3-targets`, the previous release | 0.902 | 82.2 | 14.4 | 0.957 | — | 6.74 |
+| `ahmedheakl/rand-mobile-grpo` | the single-stream GRPO baseline it was built from | 0.912 | 80.7 | — | 0.763 | — | 6.52 |
 
-A local directory works anywhere a repo id does.
+`rand-dual` is measured at its defaults below (text-to-image with APG at cfg 3.0, editing at plain
+cfg 2.0, 20 steps); the two `rand-mobile` rows at cfg 1.5 and 12 steps. ImgEdit and GEdit use a local
+Qwen2.5-VL-72B judge. A local directory works anywhere a repo id does, and the code detects a
+dual-stream checkpoint from its weights, so every checkpoint runs with the same command.
 
 ## 1024x1024
 
@@ -75,28 +86,51 @@ and OCR 47.9 vs 40. The latent-upsampler variant is not included.
 Note the VAE must stay bf16 -- fp16 underflows inside the DC-AE decoder and silently yields zeros.
 `hires.check_vae` asserts it.
 
-## Defaults worth not "fixing"
+## Defaults
 
-Two defaults look low and are not. Both were measured, and raising either makes the pictures worse
-while making some benchmark number better:
+The defaults are the measured recipe for `rand-dual`:
 
-- **12 solver steps, not 20.** Quality peaks around 8–12. At 20 the model wins nothing and loses on
-  human subjects (+0.100 for 12 over 20 on a paired human-quality metric, t=+2.95) for 40% more
-  compute.
-- **cfg 1.5, not 3.0.** cfg 3.0 scores higher on GenEval, DPG and ImageReward (0.919 / 83.2 / 1.083)
-  and is *significantly worse* on human subjects (−0.147, t=−2.68) — oversaturated skin and
-  crunchy detail. Pass `--cfg 3.0` when you are chasing prompt-alignment benchmarks, not photos.
+- **Text-to-image: APG at cfg 3.0.** APG (adaptive projected guidance, eta 0) removes the part of the
+  guidance update that only pushes saturation and contrast and keeps the rest. With it, cfg 3.0 beats
+  plain cfg 2.0 on DPG (+1.1), FID and ImageReward, and on a paired human-image benchmark (+0.150,
+  t=3.46: realism, hands and group shots all improve; measured on this checkpoint's immediate
+  predecessor). Without APG, raising cfg to 3.0 makes people look
+  worse, which is why the older checkpoints shipped at cfg 1.5.
+- **Editing: plain cfg 2.0.** APG at cfg 3.0 raised GEdit by 0.15 but lowered ImgEdit by 0.06; at
+  cfg 2.0 it was neutral.
+- **20 DPM-Solver++ steps.**
 
-Other flags: `--steps`, `--cfg`, `--seed`, `--gpu`, `--ckpt`, `--base`, `--sana`.
+Change them with `--cfg`, `--guidance {apg,cfg}` and `--steps`. For the single-stream `rand-mobile`
+checkpoints, their own measured recipe is `--cfg 1.5 --steps 12 --guidance cfg`.
+
+## Dual-stream editing
+
+A dual-stream checkpoint carries a small extra module, the **source gate**: a bias-free patch
+projection from the 32-channel DC-AE latent to the DiT width, and a scalar gate. For an edit, the
+source image is resized and centre-cropped to 512x512 exactly as in training, encoded by the frozen
+DC-AE, projected, multiplied by tanh(gate) and **added** to the DiT's patch embedding of the noisy
+latent at every step. Both guidance branches get the same source. Token count and DiT cost are
+unchanged; the only extra work is one VAE encode of the source (52 ms). For text-to-image nothing is
+added. `mobileov2/source_gate.py` is the whole implementation.
 
 ## Speed
 
-On one RTX PRO 6000 at the defaults: **363 ms/image** for a batch of 8, ~2.3 s for a single image.
-The first call pays ~2 s of CUDA warm-up, so a one-off sample looks far slower per image than the
-model really is — pass all your prompts in one command.
+One image, batch 1, 20 steps, `rand-dual`, one RTX PRO 6000 Blackwell, median of 30 runs after 5
+warm-up:
 
-Going from 20 steps to 12 only moved this from 410 to 363 ms. The diffusion steps are not the
-bottleneck; the per-prompt VLM encode is, and it is deliberately not batched (see below).
+| | ms |
+|---|---|
+| text-to-image: VLM + connector encode | 207 |
+| text-to-image: 20 steps + decode, APG cfg 3.0 | 693 (plain cfg: 690) |
+| **text-to-image, end-to-end** | **895** |
+| editing: VLM + connector encode (instruction and null branch) | 692 |
+| editing: source latent encode (dual-stream only) | 52 |
+| editing: 20 steps + decode, cfg 2.0 | 689 |
+| **editing, end-to-end** | **1584** |
+
+APG costs 2 ms over plain guidance. An edit runs the VLM over the source image twice (with the
+instruction and with an empty one), which is most of its extra time. The first call in a process
+pays ~2 s of CUDA warm-up, so pass all your prompts in one command.
 
 ## What the code does
 
@@ -105,7 +139,8 @@ infer.py              CLI: parse, load, encode, sample, save
 mobileov2/modeling.py the model — frozen VLM + connector + DiT + DC-AE, and load_model()
 mobileov2/blocks.py   the mcptf connector (verbatim from the research repo)
 mobileov2/prompts.py  prompt templates and token-id construction (verbatim)
-mobileov2/pipeline.py conditioning and the DPM-Solver++ sampling loop
+mobileov2/pipeline.py conditioning, the DPM-Solver++ sampling loop, and APG
+mobileov2/source_gate.py the dual-stream source gate and the source-image encode
 mobileov2/hires.py    1024px decode: load the head, decode_1024()
 mobileov2/upsampler.py the c100 decoder head itself (verbatim from the research repo)
 ```
@@ -129,7 +164,18 @@ template still produces an image — just a worse one, with no error to tell you
 
 ## Equivalence with the research code
 
-Checked against the full research repo on the same checkpoint, settings and seed:
+`rand-dual`, checked against the research repo's evaluation path on GPU (3 ImgEdit edits at cfg 2.0
+and 3 prompts at APG cfg 3.0, 20 steps, same noise):
+
+- all 1759 loaded tensors identical, including the two source-gate tensors;
+- generation and edit conditioning (`ehs`, `nehs`, `mask`, `nmask`) bit-identical;
+- source latent within 2 bf16 rounding steps (0.031 max). The first difference is one linear layer
+  inside the frozen DC-AE encoder, with identical inputs and weights: a GPU kernel rounding
+  differently, not a code difference;
+- images: mean difference 0.16–0.20/255 for text-to-image and 0.33–1.6/255 for edits;
+- with the gate zeroed, the same edits move by ~55/255, so the gate is doing real work.
+
+Earlier, for `rand-mobile`, on the same checkpoint, settings and seed:
 
 - all 1757 loaded tensors identical;
 - edit conditioning (`ehs`, `nehs`, `mask`, `nmask`) bit-identical;
@@ -144,6 +190,7 @@ difference 0, mean 0.33/255, max 18 on 0.1% of channels — i.e. the same image,
 - 512×512, or 1024×1024 via `--size 1024` (a better decode of the same 512px-latent image, not
   more diffusion detail).
 - English prompts.
-- The editing model rewrites the scene rather than doing a local patch, so fine source detail is
-  not preserved the way an inpainting model preserves it.
+- The editing model rewrites the scene rather than doing a local patch. The dual-stream gate keeps
+  unedited regions much closer to the source than the single-stream checkpoints do, but it is not a
+  pixel-exact inpainting model.
 - The head alone is not a runnable model; the two upstream repos in the table above are required.

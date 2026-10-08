@@ -22,6 +22,7 @@ from diffusers.pipelines.pipeline_utils import numpy_to_pil
 from diffusers.utils.torch_utils import randn_tensor
 
 from .modeling import n_fuse
+from .source_gate import set_source
 from .prompts import (IMAGE_TOKEN_INDEX, UND_MAX_SLICES, build_edit_ids, build_ids,
                       embed_edit_row, process_und_image)
 
@@ -93,13 +94,33 @@ def make_noise(n, shape, seed, device):
     return z.repeat(n, 1, 1, 1).to(device)
 
 
+def _apg(uncond, text, w, x_t, sigma):
+    """Adaptive Projected Guidance (Sadat et al. 2024, eta=0), in x0 space: drop the part of the guidance
+    update that is parallel to the conditional prediction (it mostly pushes saturation and contrast) and keep
+    the orthogonal part. With it, cfg 3.0 beats plain cfg 2.0 on DPG, FID, ImageReward and human quality."""
+    sg = float(sigma)
+    if sg <= 0 or w == 1.0:
+        return text
+    d_c = x_t.float() - sg * text.float()
+    d_u = x_t.float() - sg * uncond.float()
+    diff = d_c - d_u
+    v1 = torch.nn.functional.normalize(d_c.double().flatten(1), dim=1).view_as(d_c)
+    par = ((diff.double() * v1).sum(dim=[-1, -2, -3], keepdim=True) * v1).float()
+    d_g = d_c + (w - 1.0) * (diff - par)
+    return ((x_t.float() - d_g) / sg).to(text.dtype)
+
+
 @torch.no_grad()
-def sample(model, ehs, nehs, mask, nmask, noise, steps, cfg, size=512, head=None):
+def sample(model, ehs, nehs, mask, nmask, noise, steps, cfg, size=512, head=None, src=None, guidance="cfg"):
     """-> list of PIL images, one per row of `ehs`.
 
     size=1024 routes the final latent through the trained decoder head (see hires.py) instead of
     the ordinary DC-AE decode. The DIFFUSION is identical either way -- same latent, same steps --
-    so 1024px is a decode-time choice and costs no extra DiT compute."""
+    so 1024px is a decode-time choice and costs no extra DiT compute.
+
+    src: [B, 32, 16, 16] source latents (source_gate.encode_sources) for EDITS on a dual-stream checkpoint;
+    None for generation. guidance: "cfg" (plain classifier-free guidance) or "apg"."""
+    assert guidance in ("cfg", "apg"), guidance
     assert size in (512, 1024), size
     assert size == 512 or head is not None, "size=1024 needs the 1024px head (see hires.load_head)"
     inner = model.get_model()
@@ -115,16 +136,28 @@ def sample(model, ehs, nehs, mask, nmask, noise, steps, cfg, size=512, head=None
     sched = copy.deepcopy(inner.noise_scheduler)
     sched.set_timesteps(steps)
     lat = noise
-    for t in sched.timesteps:
-        inp = torch.cat([lat, lat]) if use_cfg else lat
-        inp = sched.scale_model_input(inp, t)
-        pred = dit(hidden_states=inp.to(dit.dtype), encoder_hidden_states=ehs_in.to(dit.dtype),
-                   timestep=t.unsqueeze(0).expand(inp.shape[0]).to(lat.device),
-                   encoder_attention_mask=mask_in).sample.float()
-        if use_cfg:
-            uncond, text = pred.chunk(2)
-            pred = uncond + cfg * (text - uncond)
-        lat = sched.step(pred, t, lat).prev_sample
+    if getattr(dit, "source_gate", None) is not None:
+        assert src is None or src.shape[0] == bsz, f"{src.shape[0]} source latents for {bsz} images"
+        set_source(dit, src)       # None for generation: the dual-stream DiT then runs single-stream
+    else:
+        assert src is None, "source latents given, but this checkpoint is single-stream"
+    try:
+        for i, t in enumerate(sched.timesteps):
+            inp = torch.cat([lat, lat]) if use_cfg else lat
+            inp = sched.scale_model_input(inp, t)
+            pred = dit(hidden_states=inp.to(dit.dtype), encoder_hidden_states=ehs_in.to(dit.dtype),
+                       timestep=t.unsqueeze(0).expand(inp.shape[0]).to(lat.device),
+                       encoder_attention_mask=mask_in).sample.float()
+            if use_cfg:
+                uncond, text = pred.chunk(2)
+                if guidance == "apg":
+                    pred = _apg(uncond, text, cfg, lat, sched.sigmas[i])
+                else:
+                    pred = uncond + cfg * (text - uncond)
+            lat = sched.step(pred, t, lat).prev_sample
+    finally:
+        if getattr(dit, "source_gate", None) is not None:
+            set_source(dit, None)
 
     if size == 1024:
         from .hires import decode_1024

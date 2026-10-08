@@ -2,7 +2,8 @@
 from .modeling import MobileOForCausalLM, load_model, n_fuse
 from .hires import decode_1024, load_head
 from .pipeline import encode, encode_edit, make_noise, sample
+from .source_gate import encode_sources
 
 __all__ = ["MobileOForCausalLM", "load_model", "n_fuse",
            "encode", "encode_edit", "make_noise", "sample",
-           "load_head", "decode_1024"]
+           "load_head", "decode_1024", "encode_sources"]

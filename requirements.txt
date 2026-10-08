@@ -1,6 +1,7 @@
 # MiniCPM-V-4.6 is a native transformers model, so transformers 5.x is REQUIRED:
 # on 4.x the import fails with "No module named transformers.models.minicpmv4_6".
 torch>=2.4
+torchvision
 transformers>=5.0
 diffusers>=0.35.2
 accelerate
