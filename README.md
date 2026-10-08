@@ -110,8 +110,10 @@ The defaults are the measured recipe for `rand-dual`:
   t=3.46: realism, hands and group shots all improve; measured on this checkpoint's immediate
   predecessor). Without APG, raising cfg to 3.0 makes people look
   worse, which is why the older checkpoints shipped at cfg 1.5.
-- **Editing: plain cfg 2.0.** APG at cfg 3.0 raised GEdit by 0.15 but lowered ImgEdit by 0.06; at
-  cfg 2.0 it was neutral.
+- **Editing: plain cfg 2.5.** Chosen on 265 MagicBrush edits using the annotators' masks of the region
+  to edit. From cfg 1.0 to 2.5, the change inside the edit region grows from 50 to 63/255 while the
+  background moves only from 31 to 34/255. Above 2.5, each step adds little edit and more contrast.
+  The ImgEdit/GEdit numbers above were measured at cfg 2.0.
 - **20 DPM-Solver++ steps.**
 
 Change them with `--cfg`, `--guidance {apg,cfg}` and `--steps`. For the single-stream `rand-mobile`

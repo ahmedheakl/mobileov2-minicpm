@@ -6,7 +6,7 @@
 
 The checkpoint is downloaded from the Hugging Face Hub on first use. Defaults are the
 measured shipping recipe of the default checkpoint (see README): text-to-image with APG at
-cfg 3.0, editing with plain cfg 2.0, 20 DPM-Solver++ steps.
+cfg 3.0, editing with plain cfg 2.5, 20 DPM-Solver++ steps.
 """
 import argparse
 import os
@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--vlm_layers", type=int, default=1)
     ap.add_argument("--steps", type=int, default=20)
     ap.add_argument("--cfg", type=float, default=None,
-                    help="default: 3.0 for text-to-image (with APG), 2.0 for editing")
+                    help="default: 3.0 for text-to-image (with APG), 2.5 for editing")
     ap.add_argument("--guidance", choices=["auto", "apg", "cfg"], default="auto",
                     help="auto = APG for text-to-image, plain CFG for editing")
     ap.add_argument("--size", type=int, default=512, choices=[512, 1024],
@@ -44,7 +44,7 @@ def main():
 
     edit = bool(args.image)
     if args.cfg is None:
-        args.cfg = 2.0 if edit else 3.0
+        args.cfg = 2.5 if edit else 3.0
     if args.guidance == "auto":
         args.guidance = "cfg" if edit else "apg"
     srcs = args.image * len(args.prompt) if len(args.image) == 1 else args.image
