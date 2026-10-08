@@ -17,10 +17,23 @@ here.
 pip install -r requirements.txt
 
 python infer.py --prompt "a woman holding a ceramic mug in a sunlit kitchen" --out out/gen.png
-python infer.py --image photo.jpg --prompt "make it snow" --out out/edit.png
+python infer.py --image examples/car.png --prompt "change the weather to snowy" --out out/edit.png
 python infer.py --prompt "a cat" "a dog" --out out/          # --out becomes a directory
 python infer.py --size 1024 --prompt "..." --out out/big.png   # 1024x1024
 ```
+
+## Examples
+
+`examples/` has three real photos (source photos from [GEdit-Bench](https://huggingface.co/datasets/stepfun-ai/GEdit-Bench)).
+From the repo root, at 1024x1024:
+
+```bash
+python infer.py --size 1024 --image examples/car.png   --prompt "change the weather to snowy" --out out/car_snowy.png
+python infer.py --size 1024 --image examples/couch.png --prompt "change the color of couch to yellow" --out out/couch_yellow.png
+python infer.py --size 1024 --image examples/cat.png   --prompt "Replace the cat with a dog." --out out/cat_dog.png
+```
+
+![input vs output for the three examples](examples/examples.jpg)
 
 Nothing needs to be downloaded by hand. On first run it pulls three things from the Hugging Face
 Hub and caches them (~6 GB total):
