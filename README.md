@@ -65,15 +65,16 @@ VAE is frozen too -- only the head is learned.
 That is deliberate: the DiT is a latency budget, not a resolution choice. Going to a 32x32 latent
 would quadruple the transformer cost; this adds one decoder-side head.
 
-| one image, batch 1, 20 steps, one RTX PRO 6000 | ms |
+| one image, batch 1, 20 steps, `rand-dual`, APG cfg 3.0 | ms |
 |---|---|
-| VLM + connector encode | 193 |
-| diffusion, 20 steps | 595 |
-| decode to 512px | 29 |
-| **end-to-end, 512px** | **817** |
-| **end-to-end, 1024px** (head replaces the decode, 86 ms) | **874** |
+| VLM + connector encode | 202 |
+| 20 diffusion steps + decode to 512px | 655 |
+| 20 diffusion steps + decode to 1024px | 727 |
+| the decode alone: 512px DC-AE / 1024px head | 35 / 105 |
+| **end-to-end, 512px** | **846** |
+| **end-to-end, 1024px** | **910** |
 
-**+58 ms, +7.1% end-to-end, for four times the pixels** (median of 30 runs after 5 warm-up). Verified
+**+64 ms, +7.6% end-to-end, for four times the pixels** (how it was measured: *Speed* below). Verified
 equivalent: rendering the same prompt and seed at both sizes and downscaling the 1024 result back to
 512 gives a mean difference of 1.0/255 against the native 512px output -- the same picture, decoded
 better. On nine benchmarks the head is content-neutral (GenEval, DPG and ImgEdit unchanged) and
@@ -110,27 +111,36 @@ projection from the 32-channel DC-AE latent to the DiT width, and a scalar gate.
 source image is resized and centre-cropped to 512x512 exactly as in training, encoded by the frozen
 DC-AE, projected, multiplied by tanh(gate) and **added** to the DiT's patch embedding of the noisy
 latent at every step. Both guidance branches get the same source. Token count and DiT cost are
-unchanged; the only extra work is one VAE encode of the source (52 ms). For text-to-image nothing is
+unchanged; the only extra work is one VAE encode of the source (35 ms). For text-to-image nothing is
 added. `mobileov2/source_gate.py` is the whole implementation.
 
 ## Speed
 
-One image, batch 1, 20 steps, `rand-dual`, one RTX PRO 6000 Blackwell, median of 30 runs after 5
-warm-up:
+One image, batch 1, 20 steps, `rand-dual`, one RTX PRO 6000 Blackwell:
 
 | | ms |
 |---|---|
-| text-to-image: VLM + connector encode | 207 |
-| text-to-image: 20 steps + decode, APG cfg 3.0 | 693 (plain cfg: 690) |
-| **text-to-image, end-to-end** | **895** |
-| editing: VLM + connector encode (instruction and null branch) | 692 |
-| editing: source latent encode (dual-stream only) | 52 |
-| editing: 20 steps + decode, cfg 2.0 | 689 |
-| **editing, end-to-end** | **1584** |
+| text-to-image: VLM + connector encode | 202 |
+| text-to-image: 20 steps + decode, APG cfg 3.0 | 655 |
+| **text-to-image, end-to-end, 512px** | **846** |
+| **text-to-image, end-to-end, 1024px** | **910** |
+| editing: VLM + connector encode (instruction and null branch) | 402 |
+| editing: source latent encode (dual-stream only) | 35 |
+| editing: 20 steps + decode, cfg 2.0 | 651 |
+| **editing, end-to-end** | **1120** |
 
-APG costs 2 ms over plain guidance. An edit runs the VLM over the source image twice (with the
-instruction and with an empty one), which is most of its extra time. The first call in a process
-pays ~2 s of CUDA warm-up, so pass all your prompts in one command.
+The GPU was shared with another job when this was measured, so these are medians over only the calls during
+which no other process was using it (from per-process GPU utilisation samples). The previous checkpoint
+measured 817 ms text-to-image end-to-end on a fully idle GPU.
+
+Dual-stream and APG cost nothing measurable. In the same run, call by call: `rand-dual` vs `rand-mobile`
+text-to-image at the same settings +0.4 ms, APG vs plain guidance +1.8 ms, and an edit's 20 steps with the
+source gate vs without -4 ms. All of these are inside the noise (interquartile range about ±10 ms). The
+only real cost of dual-stream editing is the 35 ms source encode.
+
+An edit runs the VLM over the source image twice (with the instruction and with an empty one), which is most
+of its extra time. The first call in a process pays ~2 s of CUDA warm-up, so pass all your prompts in one
+command.
 
 ## What the code does
 
